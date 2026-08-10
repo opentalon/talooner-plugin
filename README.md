@@ -66,8 +66,8 @@ contract change: plugin first, tag, then bump the bot.
 ## First task
 
 Recommended for whoever picks this up: write the example ruleset from
-[`talooner/README.md`](https://github.com/opentalon/talooner) as a `.talon` +
-`.talon.test` in `talon-language/examples/`, running on synthetic facts, no
+[`talooner/README.md`](https://github.com/opentalon/talooner) as a `.tln` +
+`.tln.test` in `talon-language/examples/`, running on synthetic facts, no
 GitHub involved. It answers most of the phase-0 table in `roadmap.md` and costs a
 day. If it can't be written, the design is wrong and that's worth knowing before
 any plugin code exists.
@@ -78,7 +78,7 @@ any plugin code exists.
 |---|---|
 | [`talooner`](https://github.com/opentalon/talooner) | The bot: GitHub App service + CLI. Consumes this plugin's contract |
 | [`opentalon`](https://github.com/opentalon/opentalon) | Core orchestration platform and plugin host |
-| [`talon-language`](https://github.com/opentalon/talon-language) | The Talon DSL: grammar, parser, inference engine, `.talon.test` |
+| [`talon-language`](https://github.com/opentalon/talon-language) | The Talon DSL: grammar, parser, inference engine, `.tln.test` |
 | [`talon-db`](https://github.com/opentalon/talon-db) | Embedded fact store backing Talon |
 
 ## Contributing

@@ -256,7 +256,7 @@ flowchart LR
     MOD["modules.yaml"] --> USR
     MOD --> MODF["<b>module.*</b><br/>docs URL, owner"]
     TEAMS["teams.yaml"] --> TF["<b>team.*</b>"]
-    RULES["rules.talon"] -->|"define blocks over<br/>pr.changed_files"| TOUCH["<b>pr.touches_*</b><br/>Talon-native path predicates"]
+    RULES["rules.tln"] -->|"define blocks over<br/>pr.changed_files"| TOUCH["<b>pr.touches_*</b><br/>Talon-native path predicates"]
     PRF --> TOUCH
     REV["pull_request_review<br/>events"] --> REVF["<b>review.*</b>"]
     ENGINE["llm_review"] --> LLMF["<b>llm_review.*</b><br/>pinned to head_sha"]
@@ -279,7 +279,7 @@ flowchart LR
 
 Everything yellow is **committed to the repo being reviewed**, under
 `.github/talooner/`. The review policy is versioned, diffable, and unit-testable
-with `.talon.test` — which is the claim no LLM-based reviewer can make.
+with `.tln.test` — which is the claim no LLM-based reviewer can make.
 
 The red box is the only namespace `assert_facts` may write. Enforcement lives in
 this plugin: without it, a tenant CI workflow could POST `pr.tests_passing: true`
