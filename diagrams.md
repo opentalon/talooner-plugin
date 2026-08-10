@@ -27,45 +27,43 @@ All diagrams verified rendering with `mermaid-cli` 11.16.
 
 ## 1. Containers — C4 L2
 
-Everything inside the dashed boundary runs on the tenant's VPS. There is no
-hosted Talooner, no shared service, no third party.
+Only the cluster runs on the tenant's VPS. Talooner's GitHub half is an Action in
+GitHub's own infrastructure (decision 1) — which is why this plugin now has a
+client that dials in from outside.
 
 ```mermaid
 flowchart TB
     subgraph GH["GitHub — SaaS"]
-        direction LR
-        APP["App installation<br/>webhooks out"]
-        GAPI["REST / GraphQL API"]
+        direction TB
+        EV["Events<br/>issue_comment · pull_request<br/>check_suite"]
+        RUN["<b>talooner</b> — the action<br/>opentalon/talooner@v1<br/><i>ephemeral, one job per event</i>"]
+        GAPI["REST API"]
+        EV -->|"triggers"| RUN
     end
 
     CI["<b>Tenant CI</b><br/>preview builds · scans<br/>screenshots"]
 
     subgraph VPS["Tenant VPS"]
-        direction TB
-        BOT["<b>talooner</b> — the bot<br/>GitHub App service + CLI<br/><i>stateless</i>"]
-
         subgraph CLUSTER["OpenTalon cluster"]
             direction LR
             PLUGIN["<b>talooner-plugin</b><br/>Talon engine · rulesets<br/>llm_review · explain"]
             DB[("<b>talon-db</b><br/>facts · decisions<br/>subscriptions")]
             PLUGIN <--> DB
         end
-
-        BOT <-->|"gRPC — actions"| PLUGIN
     end
 
     LLM["<b>LLM provider</b><br/>tenant account, tenant budget"]
 
-    APP -->|"issue_comment<br/>pull_request<br/>check_suite"| BOT
-    CI -->|"POST /api/v1/facts"| BOT
-    BOT -->|"installation token<br/>reviews · comments<br/>check runs"| GAPI
+    RUN <-->|"gRPC + TLS — actions<br/>dials in, per run"| PLUGIN
+    CI -->|"POST /api/v1/facts<br/><i>store-only</i>"| PLUGIN
+    RUN -->|"GITHUB_TOKEN<br/>reviews · comments<br/>check runs"| GAPI
     PLUGIN -->|"tenant credentials<br/>live only here"| LLM
 
     classDef ext fill:#f4f4f4,stroke:#8a8a8a,stroke-dasharray:5 4,color:#333
     classDef own fill:#e8f0fe,stroke:#3b6bb5,color:#102040
     classDef store fill:#ede7f6,stroke:#6a4fa3,color:#221040
-    class APP,GAPI,LLM,CI ext
-    class BOT own
+    class EV,GAPI,LLM,CI ext
+    class RUN own
     class PLUGIN own
     class DB store
     style VPS fill:#fbfdff,stroke:#3b6bb5,stroke-width:2px,stroke-dasharray:7 5
@@ -73,14 +71,18 @@ flowchart TB
     style GH fill:#fafafa,stroke:#8a8a8a,stroke-dasharray:5 4
 ```
 
-Two things to read off this diagram:
+Three things to read off this diagram:
 
 - **This plugin has no arrow to GitHub.** Not "shouldn't" — doesn't. Every GitHub
-  edge belongs to the bot. If one ever appears here, the seam is broken and the
-  testing story goes with it.
-- **The bot never touches an LLM.** Provider credentials live in the cluster and
-  nowhere else. Compromise the bot, you get GitHub comment access; compromise the
-  cluster, you get LLM spend. Never both.
+  edge belongs to the action. If one ever appears here, the seam is broken and
+  the testing story goes with it. It is also why nothing can happen between
+  events: no outbound edge means no way to act on a fact that arrives alone.
+- **The action never touches an LLM.** Provider credentials live in the cluster
+  and nowhere else. Compromise a run, you get one repo's GitHub access for
+  minutes; compromise the cluster, you get LLM spend. Never both.
+- **Every arrow into the cluster comes from outside the VPS now.** The caller is
+  a GitHub-hosted container, so the gRPC surface has to be exposed, authenticated
+  and rate-limited — `deployment.md`, "Exposing the cluster".
 
 ---
 
@@ -117,31 +119,38 @@ The seam: the plugin returns an **abstract action list**, the bot translates it
 into API calls. Consequences worth stating —
 
 - `talooner-plugin` is testable with zero GitHub fixtures.
-- The bot holds no engine state, so it restarts freely.
+- The caller holds no engine state, which is what lets it be a process that exits
+  after every event.
 - `rules plan` is not a separate code path. It's the same evaluation with the
-  printer executor swapped in bot-side, driven by `mode: plan` here.
+  printer executor swapped in bot-side, driven by `mode: plan` here. The response
+  carries a distinct `plan[]` field and no `actions` key, so plan output can't
+  reach the GitHub executor even if a caller forgets to check the mode
+  (`OPEN-QUESTIONS.md` B4).
 
 ---
 
 ## 3. Flow — `evaluate_pr`
 
-The bot's half is compressed; the full v1 entry-point flow (webhook verification,
-write-access gate, token minting) is in `talooner/diagrams.md` §3.
+The caller's half is compressed; the full v1 entry-point flow (workflow trigger,
+write-access gate, `GITHUB_TOKEN`) is in `talooner/diagrams.md` §3.
 
 ```mermaid
 sequenceDiagram
     autonumber
-    participant Bot as talooner
+    participant Bot as talooner (runner)
     participant Plug as talooner-plugin
     participant DB as talon-db
 
+    Bot->>Plug: whoami — capability + protocol version
+    Plug-->>Bot: tenant, quota, models, protocol_version
+    Note over Bot,Plug: fresh connection every run —<br/>nothing amortises across events
     Bot->>Bot: extract facts at head_sha,<br/>load ruleset from BASE branch
     Bot->>Plug: action evaluate_pr —<br/>repo, pr, head_sha, facts JSON,<br/>ruleset text, mode
 
     Plug->>Plug: decode + validate request shape
     Plug->>Plug: parse/compile tenant ruleset<br/>+ strict base ruleset
     Plug->>DB: assert facts into (repo, pr) scope
-    Note over Plug,DB: absent facts are RETRACTED —<br/>the bot always sends a full set
+    Note over Plug,DB: absent facts are RETRACTED —<br/>the caller always sends a full set
     Plug->>DB: mark PR subscribed
 
     Plug->>Plug: run engine
@@ -150,7 +159,7 @@ sequenceDiagram
     end
     Plug->>Plug: defeasible resolution
     Plug->>DB: persist decision + explain
-    Note over Plug,DB: persisted BEFORE responding —<br/>a bot crash still leaves a record
+    Note over Plug,DB: persisted BEFORE responding —<br/>a cancelled run still leaves a record
 
     Plug-->>Bot: actions[] + explain + warnings[]
     Bot->>Bot: translate to GitHub API calls
@@ -166,15 +175,16 @@ Once invoked, the PR is subscribed. This is where reactive rules
 ```mermaid
 sequenceDiagram
     autonumber
-    participant Bot as talooner
+    participant Bot as talooner (runner)
     participant Plug as talooner-plugin
     participant DB as talon-db
 
+    Note over Bot: a push started a fresh run —<br/>it remembers nothing from the last one
     Bot->>Plug: action is_subscribed — repo, pr
 
     alt not subscribed
         Plug-->>Bot: no
-        Bot-->>Bot: drop — never reviewed unasked
+        Bot-->>Bot: exit 0 — never reviewed unasked
     else subscribed
         Plug-->>Bot: yes
         Bot->>Bot: re-extract ALL facts at the new sha
@@ -186,7 +196,7 @@ sequenceDiagram
         Plug-->>Bot: actions[] + explain
 
         alt PR grew past 500 lines — approval no longer holds
-            Note over Plug: the approve rule simply stops firing;<br/>no "un-approve" verb exists
+            Note over Plug: the approve rule simply stops firing —<br/>no "un-approve" verb exists
             Bot->>Bot: dismiss the previous approving review
         end
     end
@@ -251,7 +261,7 @@ it never changes an answer already recorded.
 
 ```mermaid
 flowchart LR
-    GHAPI["GitHub API<br/><i>via the bot</i>"] -->|"diff stats, title, body,<br/>labels, check runs"| PRF["<b>pr.*</b><br/>built-in, always asserted"]
+    GHAPI["GitHub API<br/><i>via the action</i>"] -->|"diff stats, title, body,<br/>labels, check runs"| PRF["<b>pr.*</b><br/>built-in, always asserted"]
     CO[".github/CODEOWNERS"] --> USR["<b>user.*</b><br/>who owns this code"]
     MOD["modules.yaml"] --> USR
     MOD --> MODF["<b>module.*</b><br/>docs URL, owner"]
@@ -260,7 +270,7 @@ flowchart LR
     PRF --> TOUCH
     REV["pull_request_review<br/>events"] --> REVF["<b>review.*</b>"]
     ENGINE["llm_review"] --> LLMF["<b>llm_review.*</b><br/>pinned to head_sha"]
-    YOURCI["Tenant CI<br/>assert_facts"] --> CUSTOM["<b>preview.* screenshots.*<br/>dependency_scan.*</b>"]
+    YOURCI["Tenant CI<br/>assert_facts<br/><i>store-only, read next run</i>"] --> CUSTOM["<b>preview.* screenshots.*<br/>dependency_scan.*</b>"]
 
     PRF --> STORE[("talon-db<br/>per-PR fact scope")]
     USR --> STORE
@@ -281,16 +291,20 @@ Everything yellow is **committed to the repo being reviewed**, under
 `.github/talooner/`. The review policy is versioned, diffable, and unit-testable
 with `.tln.test` — which is the claim no LLM-based reviewer can make.
 
-The red box is the only namespace `assert_facts` may write. Enforcement lives in
-this plugin: without it, a tenant CI workflow could POST `pr.tests_passing: true`
-and defeat the entire ruleset. The bot filters too; this is the last line and the
-one that owns the store. See `facts.md`, "Namespace enforcement lives here".
+The red box is the only namespace `assert_facts` may write, and in v1 that write
+produces no GitHub effect on its own — the fact waits for the next `evaluate_pr`
+(decision 20). Enforcement lives in this plugin: without it, a tenant CI workflow
+could POST `pr.tests_passing: true` and defeat the entire ruleset. Note the
+caller can no longer filter first — CI POSTs straight to the cluster, since there
+is no bot endpoint in between. This is now the **only** line of defence, not the
+last of two. See `facts.md`, "Namespace enforcement lives here".
 
 ### One trap everyone working here must know about
 
-A condition on an **unset** fact evaluates to *unknown*, not false — and
-`not <unknown>` is unknown, not true. Otherwise a PR whose fact extraction failed
-sails through `not is "critical_path"` and gets auto-approved.
+A condition on an **unset** fact evaluates to *false*, not unknown — so
+`not <unset>` is **true**, and a PR whose fact extraction failed sails through
+`not is "critical_path"` and gets auto-approved.
 
-This is a property of `talon-language`'s evaluator, not of this plugin, and it is
-the first thing phase 0 verifies. See `facts.md`, "Unset is not false".
+Phase 0 verified this against `talon-language`'s evaluator and v1 accepts it. The
+asymmetry to hold onto: positive conditions on an unset fact fail closed (the
+rule doesn't fire), negated ones fail open. See `facts.md`, "Unset is false".

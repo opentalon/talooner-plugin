@@ -1,98 +1,193 @@
 # `talooner-plugin` — open questions
 
-Plugin-scoped. Ecosystem-wide questions (bot identity, GitHub App listing,
-command semantics) live in
+Plugin-scoped. Ecosystem-wide questions live in
 [`talooner/OPEN-QUESTIONS.md`](https://github.com/opentalon/talooner/blob/main/OPEN-QUESTIONS.md).
-
 Resolved decisions are in `README.md`.
 
----
+**Nothing here is open, and nothing is blocked.** Phase-0 substrate verification
+is done — read against `talon-language` and `talon-db` at 2026-08-06, with
+runnable probes — and every question that followed from it has a call. The record
+below is kept because several of the answers are non-obvious and one (A1) is an
+accepted risk whose reasoning should survive the next person who finds it.
 
-## A. Blocking phase 0 — verify against `talon-language`, don't assume
+All three substrate fixes landed 2026-08-07. Nothing gates the design any more:
 
-Answerable by reading code, not by discussion. Each one silently produces wrong
-reviews if assumed. These are the same items as the phase-0 table in
-`roadmap.md`, stated as questions.
+| Issue | Was blocking | Landed as |
+|---|---|---|
+| [`talon-language#158`](https://github.com/opentalon/talon-language/issues/158) | every `pr.touches_*` predicate | `talon-language` 35109f0 (PR #160) + `talon-db` e1c8ddb — string predicates and full text quantify over lists on both backends |
+| [`talon-language#159`](https://github.com/opentalon/talon-language/issues/159) | `import`-based ruleset loading | `talon-language` d509092 — redefining an imported name is a compile error |
+| [`opentalon#325`](https://github.com/opentalon/opentalon/issues/325) | payload headroom | `opentalon` 4cbc14d — 32 MiB default, `OPENTALON_GRPC_MAX_MSG_BYTES` to override |
 
-**A1. Three-valued evaluation.** Does a condition on an unset fact evaluate to
-unknown (rule doesn't fire), and is `not <unknown>` unknown rather than true?
-Two-valued logic means a PR whose fact extraction failed gets auto-approved by
-`not is "critical_path"`. Hard blocker. See `facts.md`, "Unset is not false".
-
-**A2. List operands.** Do `contains` / `matches` (`grammar.ebnf:515`) quantify
-existentially over a list like `pr.changed_files`, or are they string-only? Every
-`pr.touches_*` predicate depends on it. If string-only: fix it generally in
-`internal/executor`, or fall back to a joined string asserted by the bot?
-
-**A3. Facts as action arguments.** Can an action take a fact reference rather
-than a literal — `do assign "pr" "user.owner"`? The whole `user.*` namespace is
-pointless if not.
-
-**A4. Interpolation position.** Is `{ident.field}` (`grammar.ebnf:601`) available
-in action arguments, or only in labels?
-
-**A5. Cross-ruleset defeasible.** Does `overrides` / priority resolution work
-across two rulesets loaded together (Talooner's `strict` base + the tenant's)?
-
-**A6. External wake.** Can an out-of-band fact assertion wake the reactive engine
-mid-PR? This is the *only* path for preview / screenshot / dependency-scan rules
-now that dispatch is off the table — so it moved from nice-to-have to required.
-
-**A7. `talon-db` at this shape.** Thousands of small, short-lived, concurrent
-fact scopes — one per open PR — plus subscription state. Fits, or needs work?
-
-**A8. Payload size.** Does a unary `Execute` with a fact blob plus ruleset text
-plus a size-capped diff fit comfortably in `map<string, string>` args? Cap
-default, and does `pr.diff_truncated` need to be a first-class fact? See
-`protocol.md`.
+The bot-side diff cap (A8) stays regardless; it was never only a workaround.
 
 ---
 
-## B. Still needing a call
+## Resolved
 
-**B1. Where does subscription state live?** It's cluster-side (the bot is
-stateless), but is it a `talon-db` fact like everything else, or plugin-local
-metadata outside the fact store? Fact is more consistent and makes
-`when "pr.subscribed" == true` expressible; metadata is cleaner separation.
-Leaning fact.
+**A1. Unset facts are false — accepted for v1, with caveats.**
 
-**B2. Retention defaults.** 30 days for facts, 1 year for decisions are
-placeholders. Since the tenant runs their own storage, these could just as well
-be "keep forever, you own the disk". Leaning: configurable, default 90d facts /
-forever for decisions.
+The evaluator is two-valued with closed-world negation-as-failure: a missing
+attribute makes its pattern fail, which makes the enclosing `not` succeed
+(`internal/factstore/memory.go:691,773`; `talon-db/bboltstore/query.go:314` —
+both backends agree, and there is no `unknown` anywhere in the evaluator).
+Probed directly:
 
-**B3. Does a repeat `evaluate_pr` at an unchanged sha re-run `llm_review`?** The
-fact cache says no by construction, but `@talooner /review --force` implies a
-bypass. If a force path exists, it has to be an explicit arg on `evaluate_pr` and
-it has to respect the per-tenant budget ceiling. Leaning: `force` arg, cache
-bypass, cap still applies.
+```talon
+define "critical_path" { attr "critical_path" == true }
 
-**B4. What does `mode: plan` return?** Same shape with a flag, or a distinct
-`plan[]` field the bot can't accidentally execute? The second is harder to misuse
-— an action list that reaches the GitHub executor by accident is a real write to
-someone's repo. Leaning distinct field.
+rule "auto approve" {
+  for records where type == "pr" and not is "critical_path"
+  allow "merge"
+}
+```
 
----
+A PR with `critical_path` **unset** matched and was allowed. `is` is plain
+inlining of the define's conditions (`internal/planner/planner.go:1983`), so it
+carries no separate truth value.
 
-## C. Deferred to the phase that needs them
+**Decision: approve on missing facts, don't block.** Caveats, discussed and
+knowingly accepted:
 
-- Org-level shared rulesets and non-overridable org policy (phase 4)
-- Community ruleset distribution and versioning (phase 4)
-- `k8s-operator` first-class support in the CRD (phase 4)
-- A second `llm_review` variant taking `module.documentation_urls` as a list,
-  should single-module evaluation prove too coarse (`facts.md`, "Cardinality")
+- The failure is silent and inverted. Extraction throwing on a malformed diff
+  produces an *approval* with a review comment stating no problems were found —
+  because from the engine's view, nothing was. There is no signal distinguishing
+  "checked, clean" from "never checked".
+- It applies to every predicate, not just `critical_path`. Any rule of the form
+  `not is "X"` or `not attr "X" == true` reads a failed extraction as a pass.
+- The blast radius scales with the ruleset. Each new `not`-shaped rule adds
+  another path from "extractor crashed" to "approved", and none of them are
+  visible in review output.
 
----
+**The guard we chose not to build**, kept here so the option isn't rediscovered
+from scratch: negation-as-failure works *in our favour* for a completeness flag.
+Extractors would assert `pr.facts_complete` last, and
 
-## Licensing
+```talon
+strict rule "incomplete facts" {
+  for records where type == "pr" and not attr "facts_complete" == true
+  block "merge"
+  reason "fact extraction incomplete — not evaluated"
+}
+```
 
-**Apache-2.0**, matching `talooner` and the rest of the workspace. Settled; the
-reasoning is in
-[`talooner/OPEN-QUESTIONS.md`](https://github.com/opentalon/talooner/blob/main/OPEN-QUESTIONS.md).
+fires exactly when extraction died, because the missing flag makes the `not`
+true. `strict` means a tenant ruleset can't override it — overriding a strict
+rule is a compile error (`internal/validator/validator.go:316`). Cost is one rule
+plus the discipline that extractors set the flag only on full success. No engine
+change, no phase-0 delay.
 
-The one alternative that was considered and rejected for this repo specifically:
-BSL 1.1 on the plugin only, to block someone building the hosted service the
-project declined to build. Rejected because fencing the plugin is the worst
-version of open-core here — the plugin is where the OpenTalon dogfooding happens,
-so closing it means the interesting half is the part nobody can read, learn from,
-or contribute to.
+Nothing in v1 forecloses adding it later. Revisit if this bites — the symptom to
+watch for is an approval on a PR that a human then finds obvious problems in.
+
+**A2. List operands — fixed upstream, landed.**
+[`talon-language#158`](https://github.com/opentalon/talon-language/issues/158),
+shipped in `talon-language` 35109f0 and `talon-db` e1c8ddb. `contains` /
+`starts_with` / `ends_with` now quantify existentially over `[]string` / `[]any`
+subjects — the condition holds when any element satisfies it
+(`internal/factstore/memory.go:830`). Same for full text (`matches` /
+`matches_phrase`), and the `talon-db` evaluator agrees, so the store and language
+layers no longer disagree. `==` stays strict equality against the whole list.
+
+Two edges the `pr.touches_*` predicates have to respect:
+
+- **A list with no string elements matches nothing** — it does not fall back to
+  the scalar path. An empty `pr.changed_files` matches no predicate, which is the
+  wanted direction.
+- **`matches` is not a glob.** Locally it is a contiguous case-insensitive
+  substring scan; on Datalevin it is term-AND. `matches "**/*.css"` matches
+  nothing, because no path literally contains `**/*.css`. Path predicates use
+  `contains` / `ends_with`. Fixed in `facts.md`, which had glob-shaped examples.
+
+**A5. Ruleset loading — fixed upstream, landed. Use `import`.**
+[`talon-language#159`](https://github.com/opentalon/talon-language/issues/159),
+shipped in `talon-language` d509092. A caller block that redefines an imported
+name is now a hard error naming the imported file and line
+(`internal/imports/resolve.go:207`), so a tenant can no longer delete a `strict`
+base rule by naming a rule identically. Defeasible resolution across a combined
+base + tenant ruleset already worked (`internal/defeasible/defeasible.go:33`).
+
+**The interim is dropped:** the base ruleset is `import`ed, not concatenated with
+the tenant's into one source. Both give the same protection now, and `import`
+keeps the base ruleset a file the tenant can read and the plugin can version
+rather than a string join. The tenant-visible failure is a compile error at
+`validate_ruleset` time telling them to rename.
+
+**A7. Storage shape — one doc per PR, keyed `{repo}#{number}`.** `talon-db` is
+keyed `(entity_id, doc_id)` with `entity_id` pinned to one tenant per client
+(`internal/talondb/adapter.go:101`), so a PR is a document, not its own scope.
+Follows from that:
+
+- Scoping a run to one PR means injecting the `pr_key` pattern into every
+  selector at load time — invisible to tenant rule authors, but it has to happen
+  or every rule sees every PR's records.
+- Retention is a sweeper (`Scan` + per-doc `Delete`), not a config key. There is
+  no bulk delete; `idmap` entries survive deletion permanently
+  (`talon-db/bboltstore/idmap.go:14`), so the bbolt file never shrinks.
+- `Assert` is a non-atomic read-modify-write with no CAS
+  (`internal/talondb/adapter.go:103-123`). Overlapping writers interleave into a
+  mixed document rather than last-write-wins. Closed by B6.
+
+**A8. Payload ceiling — fixed in core, landed.**
+[`opentalon#325`](https://github.com/opentalon/opentalon/issues/325), shipped in
+`opentalon` 4cbc14d. Previously no message-size options were set on any
+host↔plugin path, so gRPC's 4 MiB default receive limit governed every call and
+the failure past it was a transport error naming no field — bad, because one
+`evaluate_pr` carries the fact blob, the ruleset text, and the diff inline in a
+single `map<string, string>` (`opentalon/proto/plugin.proto:93`), and the ceiling
+applies to their sum. Core now sets limits symmetrically on server and client
+(`opentalon/internal/grpclimit`): **32 MiB default, `OPENTALON_GRPC_MAX_MSG_BYTES`
+to override**, applied to both plugin and channel paths.
+
+Consequences for us:
+
+- Headroom is no longer the constraint. A 1 MiB diff against 32 MiB is
+  comfortable, so the cap below is a policy choice about LLM cost and review
+  quality, not a transport workaround.
+- The override is an *operator* knob on the cluster, not something the action
+  sets. A tenant who raises it has to raise it on both ends; the plugin should
+  not assume more than the default.
+
+Two things stay ours:
+
+- **A bot-side diff cap.** Even with the larger ceiling, the bot caps before
+  sending so the failure is our error message rather than a transport error.
+  1 MiB diff against the 32 MiB transport default.
+- **`pr.diff_truncated` as a first-class fact.** Under the A1 decision an unset
+  fact reads as false, so without it "the diff had no problems" and "we never saw
+  the diff" are the same value to the engine — the exact A1 failure mode, on the
+  one input most likely to hit a size limit.
+
+**B1. Subscription state lives in the fact store.** A `talon-db` fact like
+everything else, so `when attr "pr.subscribed" == true` is expressible and there's one
+storage story rather than two.
+
+**B2. Retention defaults stand** — 90d facts, forever for decisions,
+configurable. Per A7 this is a GC job phase 2 owes, not a config value.
+
+**B4. `mode: plan` returns a distinct `plan[]` field**, not the normal shape with
+a flag:
+
+```jsonc
+{ "plan": [ {"kind": "request_changes", ...} ] }   // no "actions" key at all
+```
+
+The alternative — `{"actions": [...], "planned": true}` — puts dry-run output in
+the same field the GitHub executor reads, so correctness depends on every caller
+path checking `planned` first. A retry wrapper, an error path, a later refactor,
+or a third-party consumer that forwards `actions` without the check performs real
+writes on someone's repo during what the caller believed was a dry run. With a
+distinct field that's structurally impossible: the data never occupies the field
+that triggers a write. Costs one branch at the call site.
+
+**B5. `whoami` carries a protocol version and the plugin rejects callers it
+can't serve.** The action version is pinned per repo in a workflow file
+(`opentalon/talooner@v1`, or a sha), the plugin version is whatever the cluster
+runs, and neither party sees the other's upgrade. The plugin refuses calls below
+its floor rather than guessing; the action fails the run with a clear message.
+
+**B6. Overlapping runs are rejected, not queued or locked.** A second
+`evaluate_pr` for a `(repo, pr)` already in flight gets a 409 Conflict. This also
+closes the A7 read-modify-write race — no interleaved writers, so no mixed
+document — without a lock or upstream batching. `concurrency:` in the tenant's
+workflow file remains the first line of defence; the 409 is what happens when
+they delete it.

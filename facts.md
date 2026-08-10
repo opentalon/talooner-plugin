@@ -20,7 +20,7 @@ Read it once; this file covers what happens to those facts after they arrive.
 | `llm_review.*` | this plugin, from an LLM call | pinned to head sha | **no** |
 | `module.*`, `team.*` | tenant-supplied lookup tables | static per repo | no |
 | `event.*` | `do emit <name>` | per evaluation | no |
-| custom (`preview.*`, `screenshots.*`, `dependency_scan.*`, …) | pushed by tenant CI | until PR closes | yes |
+| custom (`preview.*`, `screenshots.*`, `dependency_scan.*`, …) | pushed by tenant CI | until PR closes | yes — store-only, read at the next `evaluate_pr` |
 
 ## Scoping and lifetime
 
@@ -29,8 +29,17 @@ One scope per `(repo, pr)`. Contents:
 - Facts asserted by the bot each run (`pr.*`, `user.*`, `review.*`, …)
 - Facts pushed by tenant CI (`preview.*`, `screenshots.*`, …)
 - `llm_review.*` results, keyed by head sha
-- Subscription state
+- Subscription state — a fact like everything else (`OPEN-QUESTIONS.md` B1), so
+  `when attr "pr.subscribed" == true` is expressible and there's one storage story
 - Decision + `explain` records
+
+"Scope" is a Talooner concept, not a `talon-db` one. The store is keyed
+`(entity_id, doc_id)` with `entity_id` pinned to one tenant per client, so a
+scope is **one document per PR**, keyed `{repo}#{number}` (`OPEN-QUESTIONS.md`
+A7). Two consequences that leak upward: scoping an evaluation to a single PR
+means injecting a `pr_key` pattern into every selector at load time — invisible
+to tenant rule authors, but it has to happen or every rule sees every PR's
+records — and there is no drop-scope call, only per-document deletes.
 
 **Full re-derivation, never deltas.** Every `evaluate_pr` carries the complete
 fact set at that head sha. Facts absent from the request are *retracted*. This is
@@ -40,7 +49,14 @@ the review (`diagrams.md` §4).
 
 Retention: facts expire after a grace period once the PR closes; decisions and
 `explain` outlive them, because "why did the bot block this?" gets asked months
-later. Defaults are placeholders — see `OPEN-QUESTIONS.md` B5.
+later. Defaults are 90 days for facts, forever for decisions, both configurable
+(`OPEN-QUESTIONS.md` B2). Note that `talon-db` has no bulk delete, so this is a
+sweeper job phase 2 owes — `Scan` plus a per-doc `Delete` — not a config key
+someone sets.
+
+Decision 20 puts a floor under the facts number. An externally asserted fact sits
+unread until someone runs `/review`, so retention shorter than "nobody touched
+this PR for a few days" silently drops facts that were never used.
 
 ## Namespace enforcement lives here
 
@@ -48,44 +64,66 @@ later. Defaults are placeholders — see `OPEN-QUESTIONS.md` B5.
 `event.*` and `llm_review.*`.
 
 Without that check, a tenant's CI workflow can POST `pr.tests_passing: true` and
-defeat the entire ruleset. The bot also filters at its facts API, but the plugin
-is the last line and the one that owns the store. Two independent checks, because
-this one is load-bearing for every rule anyone writes.
+defeat the entire ruleset.
 
-Asserting a permitted fact wakes the engine, so reactive rules
-(`when "preview.status" == "deployed"`) fire. This is the mechanism behind every
-v2 action: Talooner doesn't build preview environments, it reacts to a fact
-saying one exists. Whether an out-of-band assertion actually wakes the reactive
-engine is phase-0 item A6 — if it doesn't, `assert_facts` does nothing and no
-preview/screenshot/scan rule ever fires.
+This got stricter under decision 1. Earlier drafts had two independent checks —
+the bot filtered at its own facts API, the plugin filtered again at the store.
+There is no bot endpoint any more; CI POSTs directly to the cluster. **This is
+the only check that exists.** It is load-bearing for every rule anyone writes,
+and it deserves tests that try each forbidden namespace explicitly rather than a
+single happy-path case.
 
-## Unset is not false
+### `assert_facts` is store-only in v1
 
-The single most dangerous detail in the system.
+Asserting a permitted fact does **not** produce a GitHub effect. Decision 20: the
+caller is a workflow run that exited long before the tenant's CI POSTed anything,
+and this plugin holds no GitHub credential, so a woken rule has nobody to act on
+its actions.
 
-A condition on an **unset** fact must evaluate to *unknown*, not false. If unset
-coerces to a zero value, the inverse pattern (`not is "critical_path"` where
-`critical_path` failed to compute) silently classifies a critical PR as safe and
-auto-approves it.
+So the v1 contract is: `assert_facts` validates the namespace, writes to the
+scope, returns what it accepted and rejected. The fact enters a verdict at the
+next `evaluate_pr` — triggered by a human typing `@talooner /review`, or by the
+next push. This is still the mechanism behind every v2 rule (Talooner doesn't
+build preview environments, it reacts to a fact saying one exists); it just isn't
+prompt.
 
-Rules:
+Whether an out-of-band assertion *could* wake the reactive engine was phase-0
+item A6, dropped by decision 20 and deferred to phase 4 (`roadmap.md`) — the
+answer only matters once there's a dispatch-triggered run alive to act on the
+wake.
 
-1. A condition on an unset fact evaluates to **unknown**, not false.
-2. A rule with any unknown condition **does not fire**.
-3. `not is "critical_path"` where `critical_path` is unknown is **also
-   unknown** — negation of unknown is unknown, not true.
-4. Rules that didn't fire due to unknowns appear in `explain` output, so a
-   maintainer can see "would have approved but `tests_passing` was unset".
+## Unset is false, and that asymmetry is load-bearing
 
-This is a property of `talon-language`'s evaluator, not something the plugin can
-implement around. Confirm points 1–3 against the actual executor before relying
-on them; if it's two-valued, that's a prerequisite change in `talon-language`,
-and it's the first thing phase 0 verifies. Hard blocker.
+The single most dangerous detail in the system. Phase 0 settled it, and not the
+way this document originally assumed.
+
+`talon-language`'s evaluator is **two-valued**, with closed-world
+negation-as-failure. There is no `unknown`. A missing attribute makes its pattern
+fail, which makes any enclosing `not` *succeed*
+(`internal/factstore/memory.go:691,773`; `talon-db/bboltstore/query.go:314` —
+both backends agree). Probed directly; see `OPEN-QUESTIONS.md` A1.
+
+The consequence splits by condition shape:
+
+| Condition | Fact unset | Safe? |
+|---|---|---|
+| `attr "pr.tests_passing" == true` | doesn't match, rule doesn't fire | yes |
+| `not is "critical_path"` | **matches, rule fires** | **no** |
+
+Positive conditions fail closed. Negated conditions fail open: a rule shaped
+`not is "critical_path"` reads a failed extraction as "not on the critical path"
+and approves.
+
+**v1 accepts this.** The decision, its caveats, and the `strict` +
+`pr.facts_complete` guard that would close it — deliberately not built — are in
+`OPEN-QUESTIONS.md` A1. This is a property of the engine, not something the
+plugin implements around; the plugin's obligation is to not paper over it, which
+means `explain` output must make a non-firing rule's reason visible.
 
 The unset case is not exotic. The bot deliberately leaves `pr.tests_passing`
 unset while CI is still running, and unset when no check matches the tenant's
-patterns at all — so a rule that auto-approves on `"pr.tests_passing" == true`
-must not fire mid-CI, and must not fire on a repo with no tests.
+patterns at all. Both are safe, because the rules that read it are gated on
+`== true`.
 
 ## `llm_review.*`
 
@@ -108,18 +146,36 @@ is a `define` over it:
 
 ```talon
 define "pr.touches_auth" {
-  "pr.changed_files" contains "internal/auth/"
-    or "pr.changed_files" matches "**/payment*"
+  attr "pr.changed_files" contains "internal/auth/"
+    or attr "pr.changed_files" contains "app/models/user.rb"
 }
 ```
 
 `grammar.ebnf:515` specifies `contains | starts_with | ends_with | matches`
-against a **string** operand. For this to work, `contains` must mean "any element
-contains" and `matches` "any element matches" — existential quantification over
-the list. Phase-0 item A2. If the executor doesn't do this, fix it generally in
-`talon-language/internal/executor` rather than special-casing Talooner; the
-fallback (have the bot also assert a newline-joined `pr.changed_paths_joined`) is
-ugly enough to be a last resort.
+against a **string** operand. For this to work, `contains` has to mean "any
+element contains" — existential quantification over the list.
+
+**It does, since 2026-08-07.** Phase 0 found it didn't: both evaluator paths
+type-asserted their operands to `string` and returned false for a list with no
+diagnostic. Fixed generally in `talon-language` rather than special-cased here —
+[`talon-language#158`](https://github.com/opentalon/talon-language/issues/158),
+landed in `talon-language` 35109f0 and `talon-db` e1c8ddb. The two layers now
+agree: `talon-db/internal/index/terms.go:124` indexes each array element as its
+own inverted term so candidate gathering finds the document, and the verify step
+no longer rejects it.
+
+The separator-delimited `pr.changed_paths_joined` fallback is dropped — it was
+only ever the plan if the fix stalled, and it leaked sentinels into tenant rules.
+
+Two edges tenant rules hit, both worth a `validate_ruleset` lint later:
+
+- **A list with no string elements matches nothing.** No fallback to the scalar
+  path, so an empty `pr.changed_files` fails every predicate. Right direction:
+  under A1 semantics a `not`-shaped rule over it still fails open, which is why
+  the extractor asserts `pr.changed_files` even when the list is empty.
+- **`matches` is a substring scan, not a glob.** Case-insensitive and contiguous
+  locally; term-AND on Datalevin. `matches "**/*.css"` matches nothing — no path
+  contains that text. Path predicates use `contains` and `ends_with`.
 
 ## Cardinality: one evaluation per PR
 
@@ -136,4 +192,4 @@ The cost, so it isn't a surprise later: a PR that changes `auth/` heavily and
 `module.documentation_urls` (list) and `module.touched_count` are both asserted
 so a ruleset can compensate — a future `llm_review` variant could take the list,
 and a strict tenant can require narrow PRs with
-`when "module.touched_count" > 1`.
+`when attr "module.touched_count" > 1`.
