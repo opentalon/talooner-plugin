@@ -10,30 +10,46 @@ not a checkbox.
 
 ---
 
-## Phase 0 — verify the substrate
+## Phase 0 — verify the substrate ✅ answered, substrate fixed
 
 **No Talooner code.** Answer whether `talon-language` and `talon-db` can express
 what this design assumes, and fix them where they can't. Every item silently
 produces wrong reviews if assumed rather than checked.
 
-| Item | Where | Consequence if it doesn't hold |
-|---|---|---|
-| Three-valued evaluation; `not <unknown>` is unknown | `talon-language/internal/executor` | Failed extraction auto-approves critical PRs. **Hard blocker.** See `facts.md`, "Unset is not false" |
-| `contains`/`matches` quantify existentially over list operands | `internal/executor`, `grammar.ebnf:515` | Every `pr.touches_*` predicate is unimplementable as designed |
-| Facts usable as action arguments (`do assign "pr" "user.owner"`) | `internal/executor` | The whole `user.*` namespace is dead weight |
-| `{ident.field}` interpolation in action args, not only labels | `grammar.ebnf:601` | Comment templating doesn't work |
-| Cross-ruleset defeasible resolution (base + tenant loaded together) | `internal/defeasible` | The `strict` base ruleset can't protect anything |
-| External fact assertion wakes reactive rules | `internal/reactive` | `assert_facts` does nothing; preview/screenshot/scan rules never fire |
-| `talon-db` handles many small, short-lived, concurrent scopes | `talon-db` | Doesn't scale past a handful of open PRs |
-| Plugin protocol fits a large fact payload | `opentalon/pkg/plugin` | The bot↔plugin seam; see `protocol.md`, "Open: payload size" |
+Verified 2026-08-06 by reading the code and running probes against both backends.
+The three substrate fixes it filed landed 2026-08-07. Findings and the decisions
+they forced are in `OPEN-QUESTIONS.md`; the summary:
+
+| Item | Result |
+|---|---|
+| Three-valued evaluation; `not <unknown>` is unknown | ❌ **No.** Two-valued, closed-world negation-as-failure — a PR with `critical_path` unset matches `not is "critical_path"` and is allowed. Accepted for v1 as a known risk (A1); `facts.md`, "Unset is false" |
+| `contains`/`matches` quantify existentially over list operands | ❌ **Not then, ✅ now.** Was string-only with a silent false on a list; fixed upstream — [`talon-language#158`](https://github.com/opentalon/talon-language/issues/158), landed 2026-08-07 in `talon-language` 35109f0 + `talon-db` e1c8ddb. `pr.touches_*` unblocked. Note `matches` is substring, not glob (A2) |
+| Facts usable as action arguments | ✅ **Yes**, fully — `attr "x"` passes typed values (lists included), plus arithmetic and string builtins |
+| A `do <verb> <args>` action clause on rules | ❌ **Not then, ✅ now.** The grammar had no `do` verb at all — actions were only `mcp "server" "tool" { key Expr }`, so the whole 7-verb vocabulary was unwritable. Added upstream 2026-08-07 ([`talon-language/docs/actions.md`](https://github.com/opentalon/talon-language/blob/main/docs/actions.md)) along with `did` / `did_not` test assertions and list literals in `given` |
+| `{ident.field}` interpolation in action args | ✅ **Yes** in action args. But `{item.<field>}` resolves only for `item.name`; `{item.id}` renders literally. Use `{id}` / `{attr.x}` |
+| Cross-ruleset defeasible resolution (base + tenant loaded together) | ✅ **Yes** when both are one compiled program; `overrides` across separately-compiled programs is still a compile error. `import` used to let a caller shadow a `strict` rule by name — [`talon-language#159`](https://github.com/opentalon/talon-language/issues/159), landed 2026-08-07 in d509092, now a hard error. The concatenation interim is dropped; load via `import` (A5) |
+| ~~External fact assertion wakes reactive rules~~ | **Dropped from phase 0** by decision 20 — nothing is alive to act on a wake, so `assert_facts` is a store-only write in v1 and the fact is read at the next `evaluate_pr`. Returns in phase 4 with dispatch-driven wake |
+| `talon-db` handles many small, short-lived, concurrent scopes | ⚠️ **Fits the data, not the API.** No drop-scope, append-only id map, single-writer bbolt, and a non-atomic read-modify-write `Assert`. One doc per PR keyed `{repo}#{number}`; overlapping runs rejected with 409 (A7, B6) |
+| Plugin protocol fits a large fact payload | ✅ **32 MiB, on purpose.** Was ~4 MiB by accident — grpc-go's default, no options set anywhere in `opentalon`. Fixed in core — [`opentalon#325`](https://github.com/opentalon/opentalon/issues/325), landed 2026-08-07 in 4cbc14d; `OPENTALON_GRPC_MAX_MSG_BYTES` overrides. Bot-side 1 MiB diff cap stays either way (A8) |
 
 **Exit:** a `.tln` file in `talon-language/examples/` expressing the brief's
 ruleset, with a `.tln.test` that passes, running against synthetic PR facts. No
-GitHub involved. If this can't be written, the design is wrong and it's cheap to
-find out now.
+GitHub involved.
 
-Fixes land in `talon-language` / `talon-db` as their own PRs, per the workspace's
-one-repo-at-a-time rule.
+**Met, 2026-08-07.** The artifact is
+[`examples/talooner_review.tln`](https://github.com/opentalon/talon-language/blob/main/examples/talooner_review.tln)
+plus its `.tln.test` — the brief's v1 ruleset on synthetic PR facts, 14 tests
+passing, no GitHub involved.
+
+Writing it found one thing verification had missed, because verification checked
+conditions and never checked actions: **the grammar had no `do` verb.** Every
+ruleset in these docs was written in a syntax the parser rejected. Fixed
+upstream rather than worked around, along with the two test-DSL gaps that made
+the artifact unwritable — no list literals in `given`, no way to assert an
+action fired. Phase 1 can start.
+
+The fixes landed in `talon-language` / `talon-db` / `opentalon` as their own PRs,
+per the workspace's one-repo-at-a-time rule.
 
 ---
 
@@ -45,13 +61,19 @@ Loads in a cluster and answers `evaluate_pr`. No LLM.
 - Owns the proto; the bot consumes the generated package as a tagged dep
 - Actions: `evaluate_pr`, `is_subscribed`, `set_subscription`, `validate_ruleset`,
   `whoami`. All `user_only: true`
+- `whoami` returns `protocol_version`, and the plugin rejects callers below its
+  floor with one clear error — the action is versioned per tenant repo now
+  (`deployment.md`, "Version skew")
 - Per-PR fact scoping, full re-derivation with retraction
 - Subscription state, retention
+- Reachable from a GitHub-hosted runner: TLS, auth on every action, per-key rate
+  limit (`deployment.md`, "Exposing the cluster"). Phase 1 is the first time
+  this thing has a client it doesn't run
 - Returned action vocabulary: `comment` and whatever the check run needs
 
-**Exit:** the bot posts a failing check run and one comment for a PR with no
-description, and re-evaluating after a push flips it green — driven entirely by
-actions this plugin returned.
+**Exit:** a workflow run posts a failing check run and one comment for a PR with
+no description, and re-evaluating after a push flips it green — driven entirely
+by actions this plugin returned, to a caller that exits between the two.
 
 ---
 
@@ -63,9 +85,10 @@ Everything that doesn't need a model.
   `notify`
 - Retraction semantics for each (`engine.md`)
 - Defeasible conflict resolution + the Talooner `strict` base ruleset
-- `mode: plan` — evaluate without returning executable actions, for head-branch
-  rulesets on fork PRs
-- `assert_facts` with namespace enforcement — the custom-facts path
+- `mode: plan` — evaluate and return a distinct `plan[]` field, never an
+  `actions` key (`OPEN-QUESTIONS.md` B4), for head-branch rulesets on fork PRs
+- `assert_facts` with namespace enforcement — the custom-facts path. Store-only:
+  accepts, validates, persists, returns no actions (decision 20)
 - `explain_pr`
 - `user.*` and `module.*` resolution as action arguments
 
@@ -85,6 +108,8 @@ The only place a model enters, and it enters as a fact. Details in
   `(pr, head_sha, doc_url, prompt_version)`
 - Per-PR conversation retained, each review a scoped turn
 - Per-PR call cap, per-tenant budget ceiling, quota surfaced via `whoami`
+- `force` arg on `evaluate_pr` — cache bypass for `@talooner /review --force`,
+  with the cap and ceiling still applying (`protocol.md`)
 - Per-module evaluation cardinality decided and implemented (`facts.md`)
 - VCR cassettes
 
@@ -100,6 +125,9 @@ API call and produces byte-identical output.
   (`talon-language/internal/imports` already exists)
 - **Org-level rulesets.** One ruleset many repos import, optionally
   non-overridable by the repo
+- **Reactive wake**, if manual `/review` after an externally POSTed fact proves
+  annoying (decision 20). This is where phase-0 item A6 comes back: dispatch
+  starts a run that is alive to act, so `assert_facts` can return actions again
 - `k8s-operator` first-class support so "run a cluster" is a manifest
 
 ---
@@ -110,9 +138,9 @@ Half the work, and it lands in other repos:
 
 | Repo | Likely work |
 |---|---|
-| `talon-language` | Three-valued evaluation guarantees; list-operand string operators; interpolation in action args; cross-ruleset defeasible resolution; external fact assertion waking reactive rules |
-| `talon-db` | Many-small-scopes performance; retention/TTL; audit-oriented queries |
-| `opentalon` | Plugin protocol fit for large payloads; tenant credential storage + quota accounting; `whoami` capability handshake |
+| `talon-language` | **Landed 2026-08-07:** list-operand quantification ([#158](https://github.com/opentalon/talon-language/issues/158), 35109f0 — was the gate on phase 0's exit), import shadowing of `strict` rules ([#159](https://github.com/opentalon/talon-language/issues/159), d509092), the `do` action clause + `did`/`did_not` test assertions + list literals in `given`. **Verified fine:** facts as action arguments, interpolation in action args, defeasible resolution across a combined ruleset. **Declined for v1:** three-valued evaluation — the risk is accepted instead (A1). **Still open, not blocking:** glob path matching — `matches` is substring locally and term-AND on Datalevin, so path predicates are written with `contains`/`ends_with`. *External fact assertion waking reactive rules is deferred to phase 4 — decision 20* |
+| `talon-db` | Bulk delete / drop-scope for retention; atomic or CAS `Assert` (worked around by B6's 409 for now); many-small-scopes performance under real load |
+| `opentalon` | **Landed 2026-08-07:** configurable gRPC message-size limits, 32 MiB default ([#325](https://github.com/opentalon/opentalon/issues/325), 4cbc14d). **Still ours to drive:** tenant credential storage + quota accounting; `whoami` capability handshake **plus a protocol version**; a gRPC surface safe to expose publicly — TLS, auth on every action, per-key rate limiting — now that the caller is a GitHub runner rather than a process on the same box |
 | `k8s-operator` | `talooner-plugin` in the instance CRD |
 
 Order matters and the workspace rule applies: land core changes first, then bump
