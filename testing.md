@@ -20,7 +20,7 @@ The interesting cases are the ones that don't fire:
 
 ## Ruleset tests
 
-Reuse `talon-language`'s `.talon.test` framework and `internal/testrunner`
+Reuse `talon-language`'s `.tln.test` framework and `internal/testrunner`
 directly. `validate_ruleset` and `talooner rules test` are the same code path —
 that's deliberate, so a tenant's CI and the plugin can never disagree about
 whether a ruleset is valid.

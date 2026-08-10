@@ -27,8 +27,8 @@ produces wrong reviews if assumed rather than checked.
 | `talon-db` handles many small, short-lived, concurrent scopes | `talon-db` | Doesn't scale past a handful of open PRs |
 | Plugin protocol fits a large fact payload | `opentalon/pkg/plugin` | The bot↔plugin seam; see `protocol.md`, "Open: payload size" |
 
-**Exit:** a `.talon` file in `talon-language/examples/` expressing the brief's
-ruleset, with a `.talon.test` that passes, running against synthetic PR facts. No
+**Exit:** a `.tln` file in `talon-language/examples/` expressing the brief's
+ruleset, with a `.tln.test` that passes, running against synthetic PR facts. No
 GitHub involved. If this can't be written, the design is wrong and it's cheap to
 find out now.
 
