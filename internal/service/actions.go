@@ -70,7 +70,7 @@ func registerActions(s *Server) {
 		Parameters: []plugin.ParameterMsg{
 			{Name: "ruleset", Description: "Ruleset text to validate", Type: "string", Required: true},
 		},
-	}, notImplemented("P-B4"))
+	}, s.validateRuleset)
 
 	s.register(plugin.ActionMsg{
 		Name:        "explain_pr",
