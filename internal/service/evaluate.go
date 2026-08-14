@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/opentalon/opentalon/pkg/plugin"
-	"github.com/opentalon/talon-language/pkg/talon"
+	"github.com/opentalon/tln-language/pkg/tln"
 
 	"github.com/opentalon/talooner-plugin/internal/facts"
 	"github.com/opentalon/talooner-plugin/internal/ruleset"
@@ -135,7 +135,7 @@ func (s *Server) evaluatePR(req plugin.Request) plugin.Response {
 }
 
 // firedRuleNames returns the distinct rule names that fired, in first-seen order.
-func firedRuleNames(fired []talon.Action) []string {
+func firedRuleNames(fired []tln.Action) []string {
 	seen := map[string]bool{}
 	var names []string
 	for _, a := range fired {
@@ -165,7 +165,7 @@ func subtract(all, remove []string) []string {
 // mapActions converts fired engine actions to the contract's action list. A verb
 // outside the vocabulary is dropped and surfaced as a warning rather than
 // reaching the bot as an action it cannot execute (engine.md).
-func mapActions(fired []talon.Action) ([]*taloonerpb.Action, []*taloonerpb.Warning) {
+func mapActions(fired []tln.Action) ([]*taloonerpb.Action, []*taloonerpb.Warning) {
 	var actions []*taloonerpb.Action
 	var warnings []*taloonerpb.Warning
 	for _, a := range fired {
@@ -182,7 +182,7 @@ func mapActions(fired []talon.Action) ([]*taloonerpb.Action, []*taloonerpb.Warni
 	return actions, warnings
 }
 
-func toProtoAction(a talon.Action) (*taloonerpb.Action, bool) {
+func toProtoAction(a tln.Action) (*taloonerpb.Action, bool) {
 	pa := &taloonerpb.Action{}
 	switch a.Verb {
 	case "approve":

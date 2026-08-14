@@ -45,7 +45,7 @@ rule "trivial" {
 // TestRedefiningImportedNameIsError is the one check standing between a tenant
 // and deleting a safety rule: redefining a name from the imported strict base
 // must be a compile error, naming the imported file and a line — not a silent
-// replacement (talon-language#159).
+// replacement (tln-language#159).
 func TestRedefiningImportedNameIsError(t *testing.T) {
 	const shadow = `import "talooner.tln"
 

@@ -2,9 +2,9 @@
 //
 // Always loaded. Every tenant ruleset imports it (import "talooner.tln"), so the
 // two compile as one program — which is what lets a tenant's `overrides` and
-// priorities resolve against these rules (talon-language/internal/defeasible),
+// priorities resolve against these rules (tln-language/internal/defeasible),
 // and what makes redefining one of these names a compile error rather than a
-// silent replacement (talon-language#159). See engine.md, "The base ruleset".
+// silent replacement (tln-language#159). See engine.md, "The base ruleset".
 //
 // Each rule is `strict`: a tenant ruleset cannot defeat it. The full base and
 // its own .tln.test land in P-B3.

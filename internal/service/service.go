@@ -48,7 +48,7 @@ type Server struct {
 	floor uint32         // lowest caller protocol_version served
 
 	// subscription state, one entry per PR scope key. Subscription is a fact
-	// (facts.md), persisted here for the plugin process's lifetime; talon-db
+	// (facts.md), persisted here for the plugin process's lifetime; tln-db
 	// backs it in a cluster. Guarded by subMu for concurrent action calls.
 	subMu sync.Mutex
 	subs  map[string]subscription
@@ -87,7 +87,7 @@ func New() *Server {
 	empty, _ := auth.NewRegistry(nil)
 	s := &Server{
 		name:          Name,
-		desc:          "OpenTalon PR reviewer: compiles a Talon ruleset against extracted PR facts and returns an abstract action list. Holds all state; never touches GitHub.",
+		desc:          "OpenTalon PR reviewer: compiles a Tln ruleset against extracted PR facts and returns an abstract action list. Holds all state; never touches GitHub.",
 		actions:       map[string]action{},
 		auth:          empty,
 		floor:         taloonerpb.ProtocolFloor,

@@ -5,7 +5,7 @@ Plugin-scoped. Ecosystem-wide questions live in
 Resolved decisions are in `README.md`.
 
 **Nothing here is open, and nothing is blocked.** Phase-0 substrate verification
-is done — read against `talon-language` and `talon-db` at 2026-08-06, with
+is done — read against `tln-language` and `tln-db` at 2026-08-06, with
 runnable probes — and every question that followed from it has a call. The record
 below is kept because several of the answers are non-obvious and one (A1) is an
 accepted risk whose reasoning should survive the next person who finds it.
@@ -14,8 +14,8 @@ All three substrate fixes landed 2026-08-07. Nothing gates the design any more:
 
 | Issue | Was blocking | Landed as |
 |---|---|---|
-| [`talon-language#158`](https://github.com/opentalon/talon-language/issues/158) | every `pr.touches_*` predicate | `talon-language` 35109f0 (PR #160) + `talon-db` e1c8ddb — string predicates and full text quantify over lists on both backends |
-| [`talon-language#159`](https://github.com/opentalon/talon-language/issues/159) | `import`-based ruleset loading | `talon-language` d509092 — redefining an imported name is a compile error |
+| [`tln-language#158`](https://github.com/opentalon/tln-language/issues/158) | every `pr.touches_*` predicate | `tln-language` 35109f0 (PR #160) + `tln-db` e1c8ddb — string predicates and full text quantify over lists on both backends |
+| [`tln-language#159`](https://github.com/opentalon/tln-language/issues/159) | `import`-based ruleset loading | `tln-language` d509092 — redefining an imported name is a compile error |
 | [`opentalon#325`](https://github.com/opentalon/opentalon/issues/325) | payload headroom | `opentalon` 4cbc14d — 32 MiB default, `OPENTALON_GRPC_MAX_MSG_BYTES` to override |
 
 The bot-side diff cap (A8) stays regardless; it was never only a workaround.
@@ -28,11 +28,11 @@ The bot-side diff cap (A8) stays regardless; it was never only a workaround.
 
 The evaluator is two-valued with closed-world negation-as-failure: a missing
 attribute makes its pattern fail, which makes the enclosing `not` succeed
-(`internal/factstore/memory.go:691,773`; `talon-db/bboltstore/query.go:314` —
+(`internal/factstore/memory.go:691,773`; `tln-db/bboltstore/query.go:314` —
 both backends agree, and there is no `unknown` anywhere in the evaluator).
 Probed directly:
 
-```talon
+```tln
 define "critical_path" { attr "critical_path" == true }
 
 rule "auto approve" {
@@ -62,7 +62,7 @@ knowingly accepted:
 from scratch: negation-as-failure works *in our favour* for a completeness flag.
 Extractors would assert `pr.facts_complete` last, and
 
-```talon
+```tln
 strict rule "incomplete facts" {
   for records where type == "pr" and not attr "facts_complete" == true
   block "merge"
@@ -80,12 +80,12 @@ Nothing in v1 forecloses adding it later. Revisit if this bites — the symptom 
 watch for is an approval on a PR that a human then finds obvious problems in.
 
 **A2. List operands — fixed upstream, landed.**
-[`talon-language#158`](https://github.com/opentalon/talon-language/issues/158),
-shipped in `talon-language` 35109f0 and `talon-db` e1c8ddb. `contains` /
+[`tln-language#158`](https://github.com/opentalon/tln-language/issues/158),
+shipped in `tln-language` 35109f0 and `tln-db` e1c8ddb. `contains` /
 `starts_with` / `ends_with` now quantify existentially over `[]string` / `[]any`
 subjects — the condition holds when any element satisfies it
 (`internal/factstore/memory.go:830`). Same for full text (`matches` /
-`matches_phrase`), and the `talon-db` evaluator agrees, so the store and language
+`matches_phrase`), and the `tln-db` evaluator agrees, so the store and language
 layers no longer disagree. `==` stays strict equality against the whole list.
 
 Two edges the `pr.touches_*` predicates have to respect:
@@ -99,8 +99,8 @@ Two edges the `pr.touches_*` predicates have to respect:
   `contains` / `ends_with`. Fixed in `facts.md`, which had glob-shaped examples.
 
 **A5. Ruleset loading — fixed upstream, landed. Use `import`.**
-[`talon-language#159`](https://github.com/opentalon/talon-language/issues/159),
-shipped in `talon-language` d509092. A caller block that redefines an imported
+[`tln-language#159`](https://github.com/opentalon/tln-language/issues/159),
+shipped in `tln-language` d509092. A caller block that redefines an imported
 name is now a hard error naming the imported file and line
 (`internal/imports/resolve.go:207`), so a tenant can no longer delete a `strict`
 base rule by naming a rule identically. Defeasible resolution across a combined
@@ -112,9 +112,9 @@ keeps the base ruleset a file the tenant can read and the plugin can version
 rather than a string join. The tenant-visible failure is a compile error at
 `validate_ruleset` time telling them to rename.
 
-**A7. Storage shape — one doc per PR, keyed `{repo}#{number}`.** `talon-db` is
+**A7. Storage shape — one doc per PR, keyed `{repo}#{number}`.** `tln-db` is
 keyed `(entity_id, doc_id)` with `entity_id` pinned to one tenant per client
-(`internal/talondb/adapter.go:101`), so a PR is a document, not its own scope.
+(`internal/tlndb/adapter.go:101`), so a PR is a document, not its own scope.
 Follows from that:
 
 - Scoping a run to one PR means injecting the `pr_key` pattern into every
@@ -122,9 +122,9 @@ Follows from that:
   or every rule sees every PR's records.
 - Retention is a sweeper (`Scan` + per-doc `Delete`), not a config key. There is
   no bulk delete; `idmap` entries survive deletion permanently
-  (`talon-db/bboltstore/idmap.go:14`), so the bbolt file never shrinks.
+  (`tln-db/bboltstore/idmap.go:14`), so the bbolt file never shrinks.
 - `Assert` is a non-atomic read-modify-write with no CAS
-  (`internal/talondb/adapter.go:103-123`). Overlapping writers interleave into a
+  (`internal/tlndb/adapter.go:103-123`). Overlapping writers interleave into a
   mixed document rather than last-write-wins. Closed by B6.
 
 **A8. Payload ceiling — fixed in core, landed.**
@@ -157,7 +157,7 @@ Two things stay ours:
   the diff" are the same value to the engine — the exact A1 failure mode, on the
   one input most likely to hit a size limit.
 
-**B1. Subscription state lives in the fact store.** A `talon-db` fact like
+**B1. Subscription state lives in the fact store.** A `tln-db` fact like
 everything else, so `when attr "pr.subscribed" == true` is expressible and there's one
 storage story rather than two.
 

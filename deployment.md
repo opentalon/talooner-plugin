@@ -2,32 +2,32 @@
 
 ## Dependency chain — read before the first build
 
-`talooner-plugin` links `talon-language`, which carries
-`replace github.com/opentalon/talon-db => ../talon-db`. **A `replace` is not
+`talooner-plugin` links `tln-language`, which carries
+`replace github.com/opentalon/tln-db => ../tln-db`. **A `replace` is not
 transitive** — the consuming module must restate it. So `talooner-plugin/go.mod`
 needs its own `replace` line:
 
 ```
-replace github.com/opentalon/talon-db => ../talon-db
+replace github.com/opentalon/tln-db => ../tln-db
 ```
 
-*and* a sibling `talon-db/` checkout, plus the CI clone step that
-`talon-language/.github/workflows/ci.yml` already uses.
+*and* a sibling `tln-db/` checkout, plus the CI clone step that
+`tln-language/.github/workflows/ci.yml` already uses.
 
 Without it every build fails with:
 
 ```
-github.com/opentalon/talon-db@v0.0.0-...: replacement directory ../talon-db does not exist
+github.com/opentalon/tln-db@v0.0.0-...: replacement directory ../tln-db does not exist
 ```
 
 This is the documented workspace convention, not a bug to fix. Recover with:
 
 ```bash
-git clone https://github.com/opentalon/talon-db.git <workspace>/talon-db
+git clone https://github.com/opentalon/tln-db.git <workspace>/tln-db
 ```
 
-Directory layout therefore matters: `talooner-plugin/`, `talon-language/` and
-`talon-db/` must be siblings.
+Directory layout therefore matters: `talooner-plugin/`, `tln-language/` and
+`tln-db/` must be siblings.
 
 ## In a cluster
 
@@ -117,7 +117,7 @@ whoever ran the rule.
 
 1. A VPS running an **OpenTalon cluster**, reachable from wherever their runners
    are
-2. `talooner-plugin` loaded in that cluster, with `talon-db` available
+2. `talooner-plugin` loaded in that cluster, with `tln-db` available
 3. LLM provider credentials configured **in the cluster**
 4. `.github/workflows/talooner.yml` in each reviewed repo
 5. `OPENTALON_HOST` + `OPENTALON_API_KEY` as repo or org secrets

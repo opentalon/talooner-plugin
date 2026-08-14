@@ -46,8 +46,8 @@ flowchart TB
     subgraph VPS["Tenant VPS"]
         subgraph CLUSTER["OpenTalon cluster"]
             direction LR
-            PLUGIN["<b>talooner-plugin</b><br/>Talon engine · rulesets<br/>llm_review · explain"]
-            DB[("<b>talon-db</b><br/>facts · decisions<br/>subscriptions")]
+            PLUGIN["<b>talooner-plugin</b><br/>Tln engine · rulesets<br/>llm_review · explain"]
+            DB[("<b>tln-db</b><br/>facts · decisions<br/>subscriptions")]
             PLUGIN <--> DB
         end
     end
@@ -88,7 +88,7 @@ Three things to read off this diagram:
 
 ## 2. Components — C4 L3
 
-Knows Talon, knows nothing about GitHub. Prose in `engine.md`.
+Knows Tln, knows nothing about GitHub. Prose in `engine.md`.
 
 ```mermaid
 flowchart TB
@@ -96,14 +96,14 @@ flowchart TB
     RPC["gRPC surface<br/>owns the proto"] --> RULES
     RULES["Ruleset loader<br/>parse · validate · compile"] --> ENGINE
     BASE["Talooner base ruleset<br/><i>strict</i>, always loaded"] --> ENGINE
-    ENGINE["Talon engine<br/>RETE-ish · reactive"] --> LLMR
+    ENGINE["Tln engine<br/>RETE-ish · reactive"] --> LLMR
     ENGINE --> DEF
     LLMR["llm_review<br/>fact-cached by head_sha"] --> DEF
     DEF["Defeasible resolution<br/>strict &gt; overrides &gt; priority"] --> EXPL
     EXPL["explain / audit"] --> OUT
     OUT(["→ actions[] + explain<br/>back to the bot"])
 
-    ENGINE <--> ST[("talon-db<br/>facts · decisions<br/>subscriptions")]
+    ENGINE <--> ST[("tln-db<br/>facts · decisions<br/>subscriptions")]
     LLMR <--> ST
     EXPL --> ST
 
@@ -139,7 +139,7 @@ sequenceDiagram
     autonumber
     participant Bot as talooner (runner)
     participant Plug as talooner-plugin
-    participant DB as talon-db
+    participant DB as tln-db
 
     Bot->>Plug: whoami — capability + protocol version
     Plug-->>Bot: tenant, quota, models, protocol_version
@@ -177,7 +177,7 @@ sequenceDiagram
     autonumber
     participant Bot as talooner (runner)
     participant Plug as talooner-plugin
-    participant DB as talon-db
+    participant DB as tln-db
 
     Note over Bot: a push started a fresh run —<br/>it remembers nothing from the last one
     Bot->>Plug: action is_subscribed — repo, pr
@@ -223,8 +223,8 @@ rule whose conditions churn.
 ```mermaid
 sequenceDiagram
     autonumber
-    participant ENG as Talon engine
-    participant DB as talon-db
+    participant ENG as Tln engine
+    participant DB as tln-db
     participant LLMR as llm_review
     participant Core as OpenTalon core
     participant API as LLM provider
@@ -266,13 +266,13 @@ flowchart LR
     MOD["modules.yaml"] --> USR
     MOD --> MODF["<b>module.*</b><br/>docs URL, owner"]
     TEAMS["teams.yaml"] --> TF["<b>team.*</b>"]
-    RULES["rules.tln"] -->|"define blocks over<br/>pr.changed_files"| TOUCH["<b>pr.touches_*</b><br/>Talon-native path predicates"]
+    RULES["rules.tln"] -->|"define blocks over<br/>pr.changed_files"| TOUCH["<b>pr.touches_*</b><br/>Tln-native path predicates"]
     PRF --> TOUCH
     REV["pull_request_review<br/>events"] --> REVF["<b>review.*</b>"]
     ENGINE["llm_review"] --> LLMF["<b>llm_review.*</b><br/>pinned to head_sha"]
     YOURCI["Tenant CI<br/>assert_facts<br/><i>store-only, read next run</i>"] --> CUSTOM["<b>preview.* screenshots.*<br/>dependency_scan.*</b>"]
 
-    PRF --> STORE[("talon-db<br/>per-PR fact scope")]
+    PRF --> STORE[("tln-db<br/>per-PR fact scope")]
     USR --> STORE
     MODF --> STORE
     TF --> STORE
@@ -305,6 +305,6 @@ A condition on an **unset** fact evaluates to *false*, not unknown — so
 `not <unset>` is **true**, and a PR whose fact extraction failed sails through
 `not is "critical_path"` and gets auto-approved.
 
-Phase 0 verified this against `talon-language`'s evaluator and v1 accepts it. The
+Phase 0 verified this against `tln-language`'s evaluator and v1 accepts it. The
 asymmetry to hold onto: positive conditions on an unset fact fail closed (the
 rule doesn't fire), negated ones fail open. See `facts.md`, "Unset is false".

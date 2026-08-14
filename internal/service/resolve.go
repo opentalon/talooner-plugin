@@ -5,7 +5,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/opentalon/talon-language/pkg/talon"
+	"github.com/opentalon/tln-language/pkg/tln"
 
 	"github.com/opentalon/talooner-plugin/internal/ruleset"
 )
@@ -22,7 +22,7 @@ import (
 // both and warns: the warning is the product, so the maintainer disambiguates
 // with `overrides` or `priority`; the bot applies block-wins only as a
 // last-resort tiebreak.
-func resolveConflicts(fired []talon.Action, meta map[string]ruleset.Meta) (kept []talon.Action, warnings []string) {
+func resolveConflicts(fired []tln.Action, meta map[string]ruleset.Meta) (kept []tln.Action, warnings []string) {
 	approvers := sideRules(fired, "approve")
 	blockers := sideRules(fired, "block")
 	if len(approvers) == 0 || len(blockers) == 0 {
@@ -40,7 +40,7 @@ func resolveConflicts(fired []talon.Action, meta map[string]ruleset.Meta) (kept 
 }
 
 // sideRules returns the set of rule names that fired a given verb.
-func sideRules(fired []talon.Action, verb string) map[string]bool {
+func sideRules(fired []tln.Action, verb string) map[string]bool {
 	out := map[string]bool{}
 	for _, a := range fired {
 		if a.Verb == verb {
@@ -84,8 +84,8 @@ func compareStrength(a, b strength) int {
 }
 
 // drop removes every action belonging to a losing rule.
-func drop(fired []talon.Action, losers map[string]bool) []talon.Action {
-	kept := make([]talon.Action, 0, len(fired))
+func drop(fired []tln.Action, losers map[string]bool) []tln.Action {
+	kept := make([]tln.Action, 0, len(fired))
 	for _, a := range fired {
 		if losers[a.Rule] {
 			continue

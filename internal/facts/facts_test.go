@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/opentalon/talon-language/pkg/talon"
+	"github.com/opentalon/tln-language/pkg/tln"
 
 	"github.com/opentalon/talooner-plugin/internal/facts"
 )
@@ -16,23 +16,23 @@ func TestKey(t *testing.T) {
 }
 
 // An or-selector: a record matches if EITHER arm holds. Naive selector
-// injection cannot scope this without grouping parens, which Talon lacks — so
+// injection cannot scope this without grouping parens, which Tln lacks — so
 // it is exactly the rule shape that leaks if scoping is done wrong.
 const orSelectorRule = `rule "flag" {
   for records where attr "pr.mergeable" == false or attr "pr.checks_pending" == true
   do comment "pr" attr "pr.owner"
 }`
 
-func runRule(t *testing.T, store talon.FactStore) []talon.Action {
+func runRule(t *testing.T, store tln.FactStore) []tln.Action {
 	t.Helper()
-	res, err := talon.Run(context.Background(), orSelectorRule, talon.WithFactStore(store))
+	res, err := tln.Run(context.Background(), orSelectorRule, tln.WithFactStore(store))
 	if err != nil {
 		t.Fatalf("run: %v", err)
 	}
 	return res.Actions
 }
 
-func commentOwners(actions []talon.Action) []string {
+func commentOwners(actions []tln.Action) []string {
 	var owners []string
 	for _, a := range actions {
 		if a.Verb != "comment" {
@@ -84,7 +84,7 @@ func TestScopeIsolation(t *testing.T) {
 // contamination Scope exists to make structurally impossible.
 func TestSharedStoreLeaks(t *testing.T) {
 	ctx := context.Background()
-	shared := talon.NewMemoryStore()
+	shared := tln.NewMemoryStore()
 	seed := `test "shared" {
   given {
     record 1 type "pr"
@@ -95,7 +95,7 @@ func TestSharedStoreLeaks(t *testing.T) {
     attr 2 "pr.owner" "bob"
   }
 }`
-	if _, err := talon.Seed(ctx, shared, seed); err != nil {
+	if _, err := tln.Seed(ctx, shared, seed); err != nil {
 		t.Fatal(err)
 	}
 

@@ -12,7 +12,7 @@ not a checkbox.
 
 ## Phase 0 — verify the substrate ✅ answered, substrate fixed
 
-**No Talooner code.** Answer whether `talon-language` and `talon-db` can express
+**No Talooner code.** Answer whether `tln-language` and `tln-db` can express
 what this design assumes, and fix them where they can't. Every item silently
 produces wrong reviews if assumed rather than checked.
 
@@ -23,21 +23,21 @@ they forced are in `OPEN-QUESTIONS.md`; the summary:
 | Item | Result |
 |---|---|
 | Three-valued evaluation; `not <unknown>` is unknown | ❌ **No.** Two-valued, closed-world negation-as-failure — a PR with `critical_path` unset matches `not is "critical_path"` and is allowed. Accepted for v1 as a known risk (A1); `facts.md`, "Unset is false" |
-| `contains`/`matches` quantify existentially over list operands | ❌ **Not then, ✅ now.** Was string-only with a silent false on a list; fixed upstream — [`talon-language#158`](https://github.com/opentalon/talon-language/issues/158), landed 2026-08-07 in `talon-language` 35109f0 + `talon-db` e1c8ddb. `pr.touches_*` unblocked. Note `matches` is substring, not glob (A2) |
+| `contains`/`matches` quantify existentially over list operands | ❌ **Not then, ✅ now.** Was string-only with a silent false on a list; fixed upstream — [`tln-language#158`](https://github.com/opentalon/tln-language/issues/158), landed 2026-08-07 in `tln-language` 35109f0 + `tln-db` e1c8ddb. `pr.touches_*` unblocked. Note `matches` is substring, not glob (A2) |
 | Facts usable as action arguments | ✅ **Yes**, fully — `attr "x"` passes typed values (lists included), plus arithmetic and string builtins |
-| A `do <verb> <args>` action clause on rules | ❌ **Not then, ✅ now.** The grammar had no `do` verb at all — actions were only `mcp "server" "tool" { key Expr }`, so the whole 7-verb vocabulary was unwritable. Added upstream 2026-08-07 ([`talon-language/docs/actions.md`](https://github.com/opentalon/talon-language/blob/main/docs/actions.md)) along with `did` / `did_not` test assertions and list literals in `given` |
+| A `do <verb> <args>` action clause on rules | ❌ **Not then, ✅ now.** The grammar had no `do` verb at all — actions were only `mcp "server" "tool" { key Expr }`, so the whole 7-verb vocabulary was unwritable. Added upstream 2026-08-07 ([`tln-language/docs/actions.md`](https://github.com/opentalon/tln-language/blob/main/docs/actions.md)) along with `did` / `did_not` test assertions and list literals in `given` |
 | `{ident.field}` interpolation in action args | ✅ **Yes** in action args. But `{item.<field>}` resolves only for `item.name`; `{item.id}` renders literally. Use `{id}` / `{attr.x}` |
-| Cross-ruleset defeasible resolution (base + tenant loaded together) | ✅ **Yes** when both are one compiled program; `overrides` across separately-compiled programs is still a compile error. `import` used to let a caller shadow a `strict` rule by name — [`talon-language#159`](https://github.com/opentalon/talon-language/issues/159), landed 2026-08-07 in d509092, now a hard error. The concatenation interim is dropped; load via `import` (A5) |
+| Cross-ruleset defeasible resolution (base + tenant loaded together) | ✅ **Yes** when both are one compiled program; `overrides` across separately-compiled programs is still a compile error. `import` used to let a caller shadow a `strict` rule by name — [`tln-language#159`](https://github.com/opentalon/tln-language/issues/159), landed 2026-08-07 in d509092, now a hard error. The concatenation interim is dropped; load via `import` (A5) |
 | ~~External fact assertion wakes reactive rules~~ | **Dropped from phase 0** by decision 20 — nothing is alive to act on a wake, so `assert_facts` is a store-only write in v1 and the fact is read at the next `evaluate_pr`. Returns in phase 4 with dispatch-driven wake |
-| `talon-db` handles many small, short-lived, concurrent scopes | ⚠️ **Fits the data, not the API.** No drop-scope, append-only id map, single-writer bbolt, and a non-atomic read-modify-write `Assert`. One doc per PR keyed `{repo}#{number}`; overlapping runs rejected with 409 (A7, B6) |
+| `tln-db` handles many small, short-lived, concurrent scopes | ⚠️ **Fits the data, not the API.** No drop-scope, append-only id map, single-writer bbolt, and a non-atomic read-modify-write `Assert`. One doc per PR keyed `{repo}#{number}`; overlapping runs rejected with 409 (A7, B6) |
 | Plugin protocol fits a large fact payload | ✅ **32 MiB, on purpose.** Was ~4 MiB by accident — grpc-go's default, no options set anywhere in `opentalon`. Fixed in core — [`opentalon#325`](https://github.com/opentalon/opentalon/issues/325), landed 2026-08-07 in 4cbc14d; `OPENTALON_GRPC_MAX_MSG_BYTES` overrides. Bot-side 1 MiB diff cap stays either way (A8) |
 
-**Exit:** a `.tln` file in `talon-language/examples/` expressing the brief's
+**Exit:** a `.tln` file in `tln-language/examples/` expressing the brief's
 ruleset, with a `.tln.test` that passes, running against synthetic PR facts. No
 GitHub involved.
 
 **Met, 2026-08-07.** The artifact is
-[`examples/talooner_review.tln`](https://github.com/opentalon/talon-language/blob/main/examples/talooner_review.tln)
+[`examples/talooner_review.tln`](https://github.com/opentalon/tln-language/blob/main/examples/talooner_review.tln)
 plus its `.tln.test` — the brief's v1 ruleset on synthetic PR facts, 14 tests
 passing, no GitHub involved.
 
@@ -48,7 +48,7 @@ upstream rather than worked around, along with the two test-DSL gaps that made
 the artifact unwritable — no list literals in `given`, no way to assert an
 action fired. Phase 1 can start.
 
-The fixes landed in `talon-language` / `talon-db` / `opentalon` as their own PRs,
+The fixes landed in `tln-language` / `tln-db` / `opentalon` as their own PRs,
 per the workspace's one-repo-at-a-time rule.
 
 ---
@@ -57,7 +57,7 @@ per the workspace's one-repo-at-a-time rule.
 
 Loads in a cluster and answers `evaluate_pr`. No LLM.
 
-- Loads as an OpenTalon plugin, `talon-db` attached
+- Loads as an OpenTalon plugin, `tln-db` attached
 - Owns the proto; the bot consumes the generated package as a tagged dep
 - Actions: `evaluate_pr`, `is_subscribed`, `set_subscription`, `validate_ruleset`,
   `whoami`. All `user_only: true`
@@ -122,7 +122,7 @@ API call and produces byte-identical output.
 ## Phase 4 — ecosystem
 
 - **Ruleset sharing.** Community rulesets, versioned and importable
-  (`talon-language/internal/imports` already exists)
+  (`tln-language/internal/imports` already exists)
 - **Org-level rulesets.** One ruleset many repos import, optionally
   non-overridable by the repo
 - **Reactive wake**, if manual `/review` after an externally POSTed fact proves
@@ -138,13 +138,13 @@ Half the work, and it lands in other repos:
 
 | Repo | Likely work |
 |---|---|
-| `talon-language` | **Landed 2026-08-07:** list-operand quantification ([#158](https://github.com/opentalon/talon-language/issues/158), 35109f0 — was the gate on phase 0's exit), import shadowing of `strict` rules ([#159](https://github.com/opentalon/talon-language/issues/159), d509092), the `do` action clause + `did`/`did_not` test assertions + list literals in `given`. **Verified fine:** facts as action arguments, interpolation in action args, defeasible resolution across a combined ruleset. **Declined for v1:** three-valued evaluation — the risk is accepted instead (A1). **Still open, not blocking:** glob path matching — `matches` is substring locally and term-AND on Datalevin, so path predicates are written with `contains`/`ends_with`. *External fact assertion waking reactive rules is deferred to phase 4 — decision 20* |
-| `talon-db` | Bulk delete / drop-scope for retention; atomic or CAS `Assert` (worked around by B6's 409 for now); many-small-scopes performance under real load |
+| `tln-language` | **Landed 2026-08-07:** list-operand quantification ([#158](https://github.com/opentalon/tln-language/issues/158), 35109f0 — was the gate on phase 0's exit), import shadowing of `strict` rules ([#159](https://github.com/opentalon/tln-language/issues/159), d509092), the `do` action clause + `did`/`did_not` test assertions + list literals in `given`. **Verified fine:** facts as action arguments, interpolation in action args, defeasible resolution across a combined ruleset. **Declined for v1:** three-valued evaluation — the risk is accepted instead (A1). **Still open, not blocking:** glob path matching — `matches` is substring locally and term-AND on Datalevin, so path predicates are written with `contains`/`ends_with`. *External fact assertion waking reactive rules is deferred to phase 4 — decision 20* |
+| `tln-db` | Bulk delete / drop-scope for retention; atomic or CAS `Assert` (worked around by B6's 409 for now); many-small-scopes performance under real load |
 | `opentalon` | **Landed 2026-08-07:** configurable gRPC message-size limits, 32 MiB default ([#325](https://github.com/opentalon/opentalon/issues/325), 4cbc14d). **Still ours to drive:** tenant credential storage + quota accounting; `whoami` capability handshake **plus a protocol version**; a gRPC surface safe to expose publicly — TLS, auth on every action, per-key rate limiting — now that the caller is a GitHub runner rather than a process on the same box |
 | `k8s-operator` | `talooner-plugin` in the instance CRD |
 
 Order matters and the workspace rule applies: land core changes first, then bump
-dependents. A change spanning `talon-language` and this repo is two PRs in two
+dependents. A change spanning `tln-language` and this repo is two PRs in two
 repos.
 
 ---

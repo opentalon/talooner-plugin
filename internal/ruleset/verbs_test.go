@@ -30,7 +30,7 @@ func TestVerbTypoRejectedByName(t *testing.T) {
 	}
 }
 
-// do deploy_preview / screenshot / scan_dependencies — parse fine as Talon, but
+// do deploy_preview / screenshot / scan_dependencies — parse fine as Tln, but
 // are rejected with a pointer to the facts API rather than silently ignored.
 func TestDispatchVerbsPointToFactsAPI(t *testing.T) {
 	for _, verb := range []string{"deploy_preview", "screenshot", "scan_dependencies"} {
@@ -95,7 +95,7 @@ func TestVerbDiagnosticReportsPosition(t *testing.T) {
 }
 
 // TestValidateRejectsBadVerbInCompilableRuleset is the end-to-end point: a
-// ruleset that talon-language compiles happily (it does not check verb names)
+// ruleset that tln-language compiles happily (it does not check verb names)
 // is still invalid because the verb is outside the vocabulary.
 func TestValidateRejectsBadVerbInCompilableRuleset(t *testing.T) {
 	const src = `import "talooner.tln"

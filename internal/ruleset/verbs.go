@@ -19,7 +19,7 @@ var allowedVerbSet = func() map[string]bool {
 	return m
 }()
 
-// dispatchVerbs read like actions and parse fine as Talon, but describe work
+// dispatchVerbs read like actions and parse fine as Tln, but describe work
 // the tenant's CI does and asserts back via assert_facts — not something the
 // plugin performs. They are rejected with a pointer to the facts API rather
 // than accepted and silently ignored.
@@ -32,7 +32,7 @@ var dispatchVerbs = map[string]bool{
 // CheckVerbs scans a ruleset source for `do <verb>` clauses whose verb is
 // outside AllowedVerbs and returns one error diagnostic per offender.
 //
-// talon-language does not validate verb names — it parses `do anything "x"` and
+// tln-language does not validate verb names — it parses `do anything "x"` and
 // hands it back — so this is the only check between a typo and a silently
 // dropped action. The scan is lexical (comments and string literals are
 // skipped) because the SDK only surfaces verbs for rules that fire against
