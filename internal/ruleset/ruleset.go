@@ -10,6 +10,7 @@
 package ruleset
 
 import (
+	"context"
 	"crypto/sha256"
 	_ "embed"
 	"encoding/hex"
@@ -83,28 +84,52 @@ func StrictBase() string { return strictBase }
 // line/column position — and a non-nil error. The tenant source is compiled
 // verbatim, so diagnostic positions line up with what the tenant wrote.
 func Load(tenantSource string) (*Compiled, []Diagnostic, error) {
-	dir, err := os.MkdirTemp("", "talooner-ruleset-*")
+	tenantPath, cleanup, err := baseDir()
 	if err != nil {
-		return nil, nil, fmt.Errorf("ruleset: temp dir: %w", err)
+		return nil, nil, err
 	}
-	defer func() { _ = os.RemoveAll(dir) }()
+	defer cleanup()
 
-	basePath := filepath.Join(dir, BaseFileName)
-	if err := os.WriteFile(basePath, []byte(strictBase), 0o600); err != nil {
-		return nil, nil, fmt.Errorf("ruleset: write base: %w", err)
-	}
-
-	// The filename need not exist on disk — talon reads the source string and
-	// only resolves imports relative to the filename's directory. Placing the
-	// virtual tenant file in dir makes `import "talooner.tln"` resolve to the
-	// base we just wrote.
-	tenantPath := filepath.Join(dir, TenantFile)
 	if cerr := talon.Check(tenantSource, talon.WithFilename(tenantPath)); cerr != nil {
 		return nil, relabel(diagnosticsFrom(cerr), tenantPath), cerr
 	}
 
 	diags := diagnosticsFrom(nil) // none on success today; kept for symmetry
 	return &Compiled{Hash: hashRuleset(strictBase, tenantSource), Diagnostics: diags}, diags, nil
+}
+
+// Evaluate compiles a tenant ruleset with the strict base imported and runs it
+// against store, returning the engine result — the fired actions with their
+// arguments already resolved per matched row. A compile failure returns a
+// *talon.CompileError; a runtime failure returns a plain error.
+//
+// The tenant ruleset is expected to import the strict base (BaseImport); loading
+// resolves that import to the shipped base so base and tenant run as one program
+// and defeasible resolution spans both.
+func Evaluate(ctx context.Context, tenantSource string, store talon.FactStore) (*talon.Result, error) {
+	tenantPath, cleanup, err := baseDir()
+	if err != nil {
+		return nil, err
+	}
+	defer cleanup()
+
+	return talon.Run(ctx, tenantSource, talon.WithFilename(tenantPath), talon.WithFactStore(store))
+}
+
+// baseDir creates a temp directory holding the strict base under BaseFileName
+// and returns the virtual tenant file path to compile/run against (it need not
+// exist on disk — talon reads the source string and only resolves imports
+// relative to this path's directory), plus a cleanup func.
+func baseDir() (tenantPath string, cleanup func(), err error) {
+	dir, err := os.MkdirTemp("", "talooner-ruleset-*")
+	if err != nil {
+		return "", func() {}, fmt.Errorf("ruleset: temp dir: %w", err)
+	}
+	if werr := os.WriteFile(filepath.Join(dir, BaseFileName), []byte(strictBase), 0o600); werr != nil {
+		_ = os.RemoveAll(dir)
+		return "", func() {}, fmt.Errorf("ruleset: write base: %w", werr)
+	}
+	return filepath.Join(dir, TenantFile), func() { _ = os.RemoveAll(dir) }, nil
 }
 
 // relabel rewrites the tenant temp path in diagnostics to the stable

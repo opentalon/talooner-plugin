@@ -27,7 +27,7 @@ func registerActions(s *Server) {
 			{Name: "mode", Description: "execute (default) or plan", Type: "string", Required: false},
 			{Name: "force", Description: "Bypass the llm_review fact cache for this evaluation (bool)", Type: "string", Required: false},
 		},
-	}, notImplemented("P-B7"))
+	}, s.evaluatePR)
 
 	s.register(plugin.ActionMsg{
 		Name:        "is_subscribed",
