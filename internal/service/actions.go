@@ -89,7 +89,10 @@ func registerActions(s *Server) {
 		Description: "Capability handshake: report tenant, quota, available models, features and the plugin's protocol version. The caller uses it to fail fast on version skew and to know whether llm_review is available.",
 		UserOnly:    true,
 		ReadOnly:    true,
-	}, notImplemented("P-B1"))
+		Parameters: []plugin.ParameterMsg{
+			{Name: ArgProtocolVersion, Description: "Caller's protocol version; a below-floor value is rejected", Type: "string", Required: false},
+		},
+	}, s.whoami)
 }
 
 // notImplemented is a placeholder handler for an action whose body has not

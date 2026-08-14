@@ -13,6 +13,9 @@ import (
 	"fmt"
 
 	"github.com/opentalon/opentalon/pkg/plugin"
+
+	"github.com/opentalon/talooner-plugin/internal/auth"
+	"github.com/opentalon/talooner-plugin/proto/taloonerpb"
 )
 
 // Name is the plugin name the host registers this process under. Calls arrive
@@ -36,14 +39,22 @@ type Server struct {
 	desc    string
 	order   []string // registration order, so Capabilities output is stable
 	actions map[string]action
+
+	auth  *auth.Registry // key→tenant; nil-safe via the empty registry set in New
+	floor uint32         // lowest caller protocol_version served
 }
 
-// New builds the registry with every Talooner action registered.
+// New builds the registry with every Talooner action registered. Until
+// Configure runs, the auth registry is empty — it authenticates nobody, which
+// is the correct fail-closed default.
 func New() *Server {
+	empty, _ := auth.NewRegistry(nil)
 	s := &Server{
 		name:    Name,
 		desc:    "OpenTalon PR reviewer: compiles a Talon ruleset against extracted PR facts and returns an abstract action list. Holds all state; never touches GitHub.",
 		actions: map[string]action{},
+		auth:    empty,
+		floor:   taloonerpb.ProtocolFloor,
 	}
 	registerActions(s)
 	return s
