@@ -22,15 +22,21 @@ import (
 // Actions come back as data with arguments already resolved per matched row
 // (`do assign "pr" attr "user.owner"` arrives carrying the owner value); the
 // plugin does not know what any verb means on GitHub.
+//
+// mode selects execute (default) or plan. In plan mode the decision is a dry
+// run — used for a head-branch ruleset on a fork PR: the actions that WOULD fire
+// are returned in the distinct `plan` field, never `actions`, and nothing is
+// persisted. The distinction lives in the payload shape, so a caller cannot
+// execute a plan by accident.
 func (s *Server) evaluatePR(req plugin.Request) plugin.Response {
-	switch mode := req.Args["mode"]; mode {
-	case "", "execute":
-		// execute mode
-	case "plan":
-		return errorResponse(req, fmt.Errorf("talooner: mode \"plan\" is not implemented yet (P-C3)"))
+	mode := req.Args["mode"]
+	switch mode {
+	case "", "execute", "plan":
+		// ok
 	default:
 		return errorResponse(req, fmt.Errorf("talooner: unknown mode %q; expected \"execute\" or \"plan\"", mode))
 	}
+	planMode := mode == "plan"
 
 	repo := req.Args["repo"]
 	prNumber, err := strconv.Atoi(req.Args["pr"])
@@ -76,8 +82,20 @@ func (s *Server) evaluatePR(req plugin.Request) plugin.Response {
 		warnings = append(warnings, &taloonerpb.Warning{Code: "unresolved_conflict", Message: w})
 	}
 	fired := firedRuleNames(resolved)
-	notFired := subtract(ruleset.RuleNames(tenantRuleset), fired)
 	explain := buildExplain(fired)
+
+	// Plan mode is a dry run: return the actions that would fire in the distinct
+	// `plan` field (never `actions`) and persist nothing. The payload shape is
+	// what makes a plan unexecutable, not a convention.
+	if planMode {
+		resp := &taloonerpb.EvaluatePrResponse{
+			Plan:     actions,
+			Explain:  explain,
+			Warnings: warnings,
+		}
+		summary := fmt.Sprintf("%s#%d: plan — %d action(s) would fire, %d warning(s)", repo, prNumber, len(actions), len(warnings))
+		return structuredResponse(req, resp, summary)
+	}
 
 	// Persist the decision BEFORE the response leaves. The caller is a workflow
 	// run that can be cancelled mid-flight, so if the record were written after
@@ -90,7 +108,7 @@ func (s *Server) evaluatePR(req plugin.Request) plugin.Response {
 		RulesetHash: ruleset.Hash(tenantRuleset),
 		Facts:       state,
 		Fired:       fired,
-		NotFired:    notFired,
+		NotFired:    subtract(ruleset.RuleNames(tenantRuleset), fired),
 		Actions:     actions,
 		Explain:     explain,
 		At:          time.Now().Unix(),
