@@ -30,6 +30,25 @@ func BotOwns(attr string) bool {
 	return false
 }
 
+// reservedPrefixes are the namespaces no tenant may write via assert_facts.
+// Wider than botPrefixes: it also covers event.* (asserted by `do emit`) and
+// llm_review.* (this plugin, pinned to head sha). Without this check a tenant's
+// CI could POST pr.tests_passing=true and defeat the entire ruleset — and since
+// CI POSTs directly to the cluster, this is the only check that exists
+// (facts.md, "Namespace enforcement lives here").
+var reservedPrefixes = []string{"pr.", "user.", "repo.", "review.", "event.", "llm_review."}
+
+// Reserved reports whether an attribute is in a reserved namespace and, if so,
+// names it (e.g. "pr.*"). These may not be asserted by a tenant.
+func Reserved(attr string) (namespace string, reserved bool) {
+	for _, p := range reservedPrefixes {
+		if strings.HasPrefix(attr, p) {
+			return strings.TrimSuffix(p, ".") + ".*", true
+		}
+	}
+	return "", false
+}
+
 // Rederive computes a scope's fact set after an evaluate_pr: the prior set with
 // every bot-owned fact dropped, overlaid with the request's facts.
 //
