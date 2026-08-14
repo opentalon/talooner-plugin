@@ -78,12 +78,12 @@ func TestExecuteUnknownAction(t *testing.T) {
 }
 
 // TestExecuteDispatches proves a known action reaches its registered handler.
-// The bodies are still stubbed, so a not-implemented error is the expected
+// evaluate_pr is still stubbed, so a not-implemented error is the expected
 // signal that dispatch worked.
 func TestExecuteDispatches(t *testing.T) {
-	resp := New().Execute(plugin.Request{ID: "7", Action: "whoami"})
+	resp := New().Execute(plugin.Request{ID: "7", Action: "evaluate_pr"})
 	if resp.Error == "" || !strings.Contains(resp.Error, "not implemented") {
-		t.Fatalf("whoami should dispatch to its stub handler, got %+v", resp)
+		t.Fatalf("evaluate_pr should dispatch to its stub handler, got %+v", resp)
 	}
 	if resp.CallID != "7" {
 		t.Errorf("call id = %q, want it echoed back", resp.CallID)
