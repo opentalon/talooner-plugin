@@ -1,0 +1,143 @@
+syntax = "proto3";
+
+// Package talooner.v1 is the Talooner action-payload contract.
+//
+// Talooner does not define its own gRPC service — OpenTalon fixes that in
+// opentalon/proto/plugin.proto, and Talooner declares *actions* the host routes
+// to Execute. What lives here are the payload shapes those actions exchange:
+// requests are serialized into the ToolCallRequest.args map and the JSON
+// `facts` arg; responses come back as JSON in ToolResultResponse
+// structured_content (protocol.md). This proto is the typed contract the bot
+// consumes as a tagged, generated Go package.
+//
+// Contract stability is a requirement. A tenant's callers are pinned
+// independently and are not told when the cluster upgrades, so this contract
+// stays backward-compatible across at least one major version: field numbers
+// are append-only, existing fields never change type or meaning, and enum
+// values are never renumbered.
+package talooner.v1;
+
+option go_package = "github.com/opentalon/talooner-plugin/proto/taloonerpb;taloonerpb";
+
+// EvaluateMode selects how evaluate_pr reports its result.
+enum EvaluateMode {
+  EVALUATE_MODE_UNSPECIFIED = 0; // treated as EXECUTE
+  EVALUATE_MODE_EXECUTE = 1;     // return an executable action list
+  EVALUATE_MODE_PLAN = 2;        // return a plan only, never executable actions
+}
+
+// Verb is the abstract action vocabulary (engine.md, "Abstract action
+// vocabulary"). The plugin returns verbs as data; the bot translates them to
+// GitHub. The set is closed — validate_ruleset rejects any verb outside it.
+enum Verb {
+  VERB_UNSPECIFIED = 0;
+  VERB_APPROVE = 1;  // target "pr"; fires only when no strict rule defeated it
+  VERB_BLOCK = 2;    // target "pr.merge"
+  VERB_COMMENT = 3;  // target + text; interpolation already resolved
+  VERB_ASSIGN = 4;   // target + assignee (resolved user/team)
+  VERB_REQUIRE = 5;  // target "review.<target>"
+  VERB_NOTIFY = 6;   // target + text; dispatched through an OpenTalon channel
+  VERB_EMIT = 7;     // name; asserts event.<name>=true in scope, no external effect
+}
+
+// Severity classifies a diagnostic or warning.
+enum Severity {
+  SEVERITY_UNSPECIFIED = 0;
+  SEVERITY_ERROR = 1;
+  SEVERITY_WARNING = 2;
+  SEVERITY_INFO = 3;
+}
+
+// Action is one abstract action the engine decided should fire, with its
+// arguments already resolved against the matched facts. Which scalar fields are
+// set depends on the verb (see Verb).
+message Action {
+  Verb verb = 1;
+  string target = 2;   // approve/block/comment/assign/require target
+  string text = 3;     // comment / notify text, interpolation resolved
+  string assignee = 4; // assign: resolved user or team
+  string name = 5;     // emit: event name
+}
+
+// Warning is a non-fatal condition surfaced alongside a decision (e.g. an
+// unresolved approve/block tie that fired both).
+message Warning {
+  string code = 1;
+  string message = 2;
+}
+
+// RuleFiring records one rule's contribution to a decision, for the audit
+// trail. Extended as explain_pr (P-C5) and decision persistence (P-B9) land.
+message RuleFiring {
+  string rule = 1;
+  string priority = 2;         // CRITICAL | HIGH | MEDIUM | LOW
+  bool strict = 3;
+  repeated string overrides = 4; // rules this one defeated
+  bool defeated = 5;
+}
+
+// Explain is the human- and machine-readable account of why a decision came
+// out the way it did.
+message Explain {
+  string summary = 1;
+  repeated RuleFiring firings = 2;
+}
+
+// Diagnostic is one finding from validate_ruleset — a parse/compile error or a
+// verb-vocabulary violation.
+message Diagnostic {
+  Severity severity = 1;
+  string message = 2;
+  int32 line = 3;
+  int32 column = 4;
+  string rule = 5;
+}
+
+// EvaluatePrRequest is the evaluate_pr payload. facts_json carries the extracted
+// PR facts as JSON (the `facts` arg on the wire); the rest map to string args.
+message EvaluatePrRequest {
+  string repo = 1;
+  int32 pr = 2;
+  string head_sha = 3;
+  string facts_json = 4;
+  string ruleset = 5;
+  EvaluateMode mode = 6;
+  bool force = 7; // bypass the llm_review fact cache for this evaluation only
+}
+
+// EvaluatePrResponse is the decision. In execute mode `actions` is populated and
+// `plan` is empty; in plan mode `plan` is populated and `actions` is empty —
+// they are distinct fields so a plan can never be mistaken for something to run.
+message EvaluatePrResponse {
+  repeated Action actions = 1;
+  repeated Action plan = 2;
+  Explain explain = 3;
+  repeated Warning warnings = 4;
+}
+
+// ValidateRulesetRequest / ValidateRulesetResponse back validate_ruleset.
+message ValidateRulesetRequest {
+  string ruleset = 1;
+}
+
+message ValidateRulesetResponse {
+  bool valid = 1;
+  repeated Diagnostic diagnostics = 2;
+}
+
+// WhoamiResponse is the capability handshake. protocol_version lets a caller
+// fail fast on version skew; models/features let it know whether llm_review is
+// available before loading a ruleset that depends on it.
+message WhoamiResponse {
+  string tenant = 1;
+  uint32 protocol_version = 2;
+  repeated string models = 3;
+  repeated string features = 4;
+  Quota quota = 5;
+}
+
+// Quota reports the tenant's LLM budget usage for the current window.
+message Quota {
+  int64 llm_calls_used = 1;
+  int64 llm_calls_limit = 2;
+}
