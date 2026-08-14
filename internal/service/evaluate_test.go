@@ -109,13 +109,13 @@ func TestEvaluatePRUnknownMode(t *testing.T) {
 	}
 }
 
-func TestEvaluatePRPlanModeNotYet(t *testing.T) {
+func TestEvaluatePRUnknownModeStillErrors(t *testing.T) {
 	resp := evaluate(map[string]string{
 		"repo": "acme/api", "pr": "1", "ruleset": evalRuleset, "facts": "{}",
-		"mode": "plan",
+		"mode": "destroy",
 	})
-	if resp.Error == "" || !strings.Contains(resp.Error, "plan") {
-		t.Errorf("plan mode should error until P-C3, got %q", resp.Error)
+	if resp.Error == "" || !strings.Contains(resp.Error, "mode") {
+		t.Errorf("an unknown mode should still error, got %q", resp.Error)
 	}
 }
 
