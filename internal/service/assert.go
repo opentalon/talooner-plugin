@@ -56,6 +56,7 @@ func (s *Server) assertFacts(req plugin.Request) plugin.Response {
 		}
 		s.tenantFacts[key] = cur
 		s.factMu.Unlock()
+		s.touchScope(key) // reset the retention clock on write
 	}
 
 	sort.Strings(accepted)

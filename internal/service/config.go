@@ -19,6 +19,11 @@ type Config struct {
 	// build can no longer serve.
 	ProtocolFloor uint32         `json:"protocol_floor,omitempty"`
 	Tenants       []TenantConfig `json:"tenants"`
+
+	// FactRetentionDays is how long a PR's stored facts survive without
+	// activity. 0 means the 90-day default; values below the decision-20 floor
+	// (3 days) are raised to it. Decisions are never swept.
+	FactRetentionDays int `json:"fact_retention_days,omitempty"`
 }
 
 // TenantConfig is one tenant's key and capabilities.
@@ -84,5 +89,6 @@ func (s *Server) Configure(configJSON string) error {
 
 	s.auth = reg
 	s.floor = floor
+	s.factRetention = retentionFromDays(cfg.FactRetentionDays)
 	return nil
 }
