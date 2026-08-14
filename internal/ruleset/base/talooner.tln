@@ -1,0 +1,29 @@
+// Talooner strict base ruleset.
+//
+// Always loaded. Every tenant ruleset imports it (import "talooner.tln"), so the
+// two compile as one program — which is what lets a tenant's `overrides` and
+// priorities resolve against these rules (talon-language/internal/defeasible),
+// and what makes redefining one of these names a compile error rather than a
+// silent replacement (talon-language#159). See engine.md, "The base ruleset".
+//
+// Each rule is `strict`: a tenant ruleset cannot defeat it. The full base and
+// its own .tln.test land in P-B3.
+
+strict rule "Never approve a PR with unresolved conflicts" {
+  for records where type == "pr"
+    and attr "pr.mergeable" == false
+  block "merge"
+  do block "pr.merge"
+  do comment "pr" "This PR has unresolved conflicts — resolve them before review"
+  reason "PR {attr.pr.number} has unresolved merge conflicts"
+  priority CRITICAL
+}
+
+strict rule "Never approve while required checks are still running" {
+  for records where type == "pr"
+    and attr "pr.checks_pending" == true
+  block "merge"
+  do block "pr.merge"
+  reason "required checks still running"
+  priority CRITICAL
+}
