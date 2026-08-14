@@ -1,0 +1,44 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+
+      - uses: golangci/golangci-lint-action@v7
+        with:
+          version: v2.7.2
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+
+      # talon-db and talon-language are consumed straight from GitHub, so no
+      # sibling checkout or local replace is needed — the module graph resolves
+      # them like any other dependency.
+      - name: Build
+        run: make build
+
+      - name: Test
+        run: make test

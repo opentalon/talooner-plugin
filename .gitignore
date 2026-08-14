@@ -1,0 +1,8 @@
+# Build output
+/talooner-plugin
+*.test
+*.out
+
+# Local tooling / editor
+/bin/
+.DS_Store
