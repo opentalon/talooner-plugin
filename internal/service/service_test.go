@@ -77,13 +77,14 @@ func TestExecuteUnknownAction(t *testing.T) {
 	}
 }
 
-// TestExecuteDispatches proves a known action reaches its registered handler.
-// explain_pr is still stubbed, so a not-implemented error is the expected
-// signal that dispatch worked.
+// TestExecuteDispatches proves a known action reaches its registered handler
+// rather than falling through to the unknown-action path. validate_ruleset with
+// no ruleset returns its own handler response (a diagnostic), not "unknown
+// action".
 func TestExecuteDispatches(t *testing.T) {
-	resp := New().Execute(plugin.Request{ID: "7", Action: "explain_pr"})
-	if resp.Error == "" || !strings.Contains(resp.Error, "not implemented") {
-		t.Fatalf("explain_pr should dispatch to its stub handler, got %+v", resp)
+	resp := New().Execute(plugin.Request{ID: "7", Action: "validate_ruleset", Args: map[string]string{}})
+	if strings.Contains(resp.Error, "unknown action") {
+		t.Fatalf("known action should dispatch to its handler, got %+v", resp)
 	}
 	if resp.CallID != "7" {
 		t.Errorf("call id = %q, want it echoed back", resp.CallID)
@@ -99,5 +100,5 @@ func TestRegisterRejectsNonUserOnly(t *testing.T) {
 		}
 	}()
 	s := &Server{actions: map[string]action{}}
-	s.register(plugin.ActionMsg{Name: "leaky"}, notImplemented("test"))
+	s.register(plugin.ActionMsg{Name: "leaky"}, func(plugin.Request) plugin.Response { return plugin.Response{} })
 }
