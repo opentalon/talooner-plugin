@@ -19,7 +19,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/opentalon/talon-language/pkg/talon"
+	"github.com/opentalon/tln-language/pkg/tln"
 )
 
 //go:embed base/talooner.tln
@@ -90,7 +90,7 @@ func Load(tenantSource string) (*Compiled, []Diagnostic, error) {
 	}
 	defer cleanup()
 
-	if cerr := talon.Check(tenantSource, talon.WithFilename(tenantPath)); cerr != nil {
+	if cerr := tln.Check(tenantSource, tln.WithFilename(tenantPath)); cerr != nil {
 		return nil, relabel(diagnosticsFrom(cerr), tenantPath), cerr
 	}
 
@@ -101,24 +101,24 @@ func Load(tenantSource string) (*Compiled, []Diagnostic, error) {
 // Evaluate compiles a tenant ruleset with the strict base imported and runs it
 // against store, returning the engine result — the fired actions with their
 // arguments already resolved per matched row. A compile failure returns a
-// *talon.CompileError; a runtime failure returns a plain error.
+// *tln.CompileError; a runtime failure returns a plain error.
 //
 // The tenant ruleset is expected to import the strict base (BaseImport); loading
 // resolves that import to the shipped base so base and tenant run as one program
 // and defeasible resolution spans both.
-func Evaluate(ctx context.Context, tenantSource string, store talon.FactStore) (*talon.Result, error) {
+func Evaluate(ctx context.Context, tenantSource string, store tln.FactStore) (*tln.Result, error) {
 	tenantPath, cleanup, err := baseDir()
 	if err != nil {
 		return nil, err
 	}
 	defer cleanup()
 
-	return talon.Run(ctx, tenantSource, talon.WithFilename(tenantPath), talon.WithFactStore(store))
+	return tln.Run(ctx, tenantSource, tln.WithFilename(tenantPath), tln.WithFactStore(store))
 }
 
 // baseDir creates a temp directory holding the strict base under BaseFileName
 // and returns the virtual tenant file path to compile/run against (it need not
-// exist on disk — talon reads the source string and only resolves imports
+// exist on disk — tln reads the source string and only resolves imports
 // relative to this path's directory), plus a cleanup func.
 func baseDir() (tenantPath string, cleanup func(), err error) {
 	dir, err := os.MkdirTemp("", "talooner-ruleset-*")
@@ -178,14 +178,14 @@ func hashRuleset(base, tenant string) string {
 	return hex.EncodeToString(h.Sum(nil))
 }
 
-// diagnosticsFrom maps a talon compile error to positioned Diagnostics. A nil
+// diagnosticsFrom maps a tln compile error to positioned Diagnostics. A nil
 // error yields no diagnostics; a non-CompileError is reported as a single
 // positionless error so nothing is swallowed.
 func diagnosticsFrom(err error) []Diagnostic {
 	if err == nil {
 		return nil
 	}
-	var ce *talon.CompileError
+	var ce *tln.CompileError
 	if !errors.As(err, &ce) {
 		return []Diagnostic{{Severity: SeverityError, Message: err.Error()}}
 	}
@@ -203,11 +203,11 @@ func diagnosticsFrom(err error) []Diagnostic {
 	return out
 }
 
-func severityString(s talon.Severity) Severity {
+func severityString(s tln.Severity) Severity {
 	switch s {
-	case talon.SeverityWarning:
+	case tln.SeverityWarning:
 		return SeverityWarning
-	case talon.SeverityInfo:
+	case tln.SeverityInfo:
 		return SeverityInfo
 	default:
 		return SeverityError

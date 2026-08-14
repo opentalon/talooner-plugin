@@ -23,8 +23,8 @@ Module: `github.com/opentalon/talooner-plugin`.
 | Owns | Does not own |
 |---|---|
 | Ruleset parse / validate / compile | Anything GitHub-shaped |
-| Fact assertion and per-PR scoping in `talon-db` | Fact *extraction* — that's the bot |
-| Talon engine execution, reactive rules | Executing actions — it returns them as data |
+| Fact assertion and per-PR scoping in `tln-db` | Fact *extraction* — that's the bot |
+| Tln engine execution, reactive rules | Executing actions — it returns them as data |
 | Defeasible conflict resolution | Deciding what a GitHub check run is |
 | `llm_review` — the only LLM call in the system | Any GitHub credential |
 | `explain` / audit persistence | Triggering — that's a workflow event |
@@ -45,7 +45,7 @@ returned actions.
 | `engine.md` | Internals in execution order, the `strict` base ruleset, defeasible conflict resolution, the abstract action vocabulary |
 | `facts.md` | Namespaces, per-PR scoping and lifetime, namespace enforcement, three-valued semantics, retention |
 | `llm-review.md` | The only LLM call anywhere in Talooner, and why the fact store is the cache |
-| `deployment.md` | Running it in a cluster, and the `talon-db` dependency chain — read before the first build |
+| `deployment.md` | Running it in a cluster, and the `tln-db` dependency chain — read before the first build |
 | `testing.md` | Unit, ruleset, VCR, and the determinism test |
 | `roadmap.md` | Plugin-scoped phases, and the phase-0 substrate this depends on |
 | `OPEN-QUESTIONS.md` | Phase-0 findings and the calls made on them |
@@ -58,9 +58,9 @@ The ones that constrain this repo:
 | # | Decision |
 |---|---|
 | 1 | **The GitHub half is an Action, not a hosted App.** It runs in the tenant's runner, lives for one job, and calls this plugin over gRPC from outside the tenant's network. Three consequences here: the cluster must be reachable from a runner, nothing can be cached in the caller between events, and this plugin holds *all* the state there is. |
-| 2 | **Thin stateless caller + `talooner-plugin` in an OpenTalon cluster.** The action knows GitHub and nothing about Talon; the plugin knows Talon and nothing about GitHub. |
+| 2 | **Thin stateless caller + `talooner-plugin` in an OpenTalon cluster.** The action knows GitHub and nothing about Tln; the plugin knows Tln and nothing about GitHub. |
 | 3 | **Self-hosted. Forever.** The cluster holds the tenant's LLM credentials; the tenant pays for their own tokens. |
-| 5 | **Facts live in `talon-db`**, per PR, persistent — required for reactive rules. |
+| 5 | **Facts live in `tln-db`**, per PR, persistent — required for reactive rules. |
 | 7 | **Defeasible conflict resolution**, not ad-hoc "block wins". |
 | 9 | **No LLM cache layer** — `llm_review` results are facts keyed by head sha, which is the cache. |
 | 11 | **No dispatch actions.** The tenant's CI does the work and POSTs the result to the facts API; rules react. |
@@ -77,7 +77,7 @@ contract change: plugin first, tag, then bump the bot.
 
 Write the example ruleset from
 [`talooner/README.md`](https://github.com/opentalon/talooner) as a `.tln` +
-`.tln.test` in `talon-language/examples/`, running on synthetic facts, no
+`.tln.test` in `tln-language/examples/`, running on synthetic facts, no
 GitHub involved. This is phase 0's exit criterion, it costs about a day, and as
 of 2026-08-07 nothing blocks it — the three substrate fixes it was waiting on
 have landed (`OPEN-QUESTIONS.md`). If it can't be written, the design is wrong
@@ -93,8 +93,8 @@ substring scan rather than a glob (write path predicates with `contains` /
 |---|---|
 | [`talooner`](https://github.com/opentalon/talooner) | The GitHub Action + CLI. Consumes this plugin's contract |
 | [`opentalon`](https://github.com/opentalon/opentalon) | Core orchestration platform and plugin host |
-| [`talon-language`](https://github.com/opentalon/talon-language) | The Talon DSL: grammar, parser, inference engine, `.tln.test` |
-| [`talon-db`](https://github.com/opentalon/talon-db) | Embedded fact store backing Talon |
+| [`tln-language`](https://github.com/opentalon/tln-language) | The Tln DSL: grammar, parser, inference engine, `.tln.test` |
+| [`tln-db`](https://github.com/opentalon/tln-db) | Embedded fact store backing Tln |
 
 ## Contributing
 

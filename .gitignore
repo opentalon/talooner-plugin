@@ -1,6 +1,6 @@
 # Build output
 /talooner-plugin
-# Talon test suites (*.tln.test) are source, not compiled Go test binaries
+# Tln test suites (*.tln.test) are source, not compiled Go test binaries
 *.test
 !*.tln.test
 *.out

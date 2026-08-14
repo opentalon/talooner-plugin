@@ -1,12 +1,12 @@
 // Package facts holds Talooner's per-PR fact scoping.
 //
-// "Scope" is a Talooner concept, not a talon-db one: the store is keyed
+// "Scope" is a Talooner concept, not a tln-db one: the store is keyed
 // (entity_id, doc_id) with entity_id pinned to one tenant per client, so a scope
 // is one document per PR, keyed {repo}#{number} (facts.md, "Scoping and
 // lifetime").
 //
 // The design called for injecting a pr_key pattern into every selector at load
-// time. The public talon-language SDK exposes neither the AST nor an
+// time. The public tln-language SDK exposes neither the AST nor an
 // implementable FactStore, and selectors have no grouping parens — so a source
 // rewrite cannot scope an `or`-selector without leaking. Instead each evaluation
 // runs against its own FactStore, seeded with only that PR's facts. This is
@@ -20,17 +20,17 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/opentalon/talon-language/pkg/talon"
+	"github.com/opentalon/tln-language/pkg/tln"
 )
 
 // KeyAttr is the record attribute that carries a fact's scope key in the
-// persistent (talon-db) store, so a PR's document can be identified and swept.
+// persistent (tln-db) store, so a PR's document can be identified and swept.
 // Per-eval isolation does not depend on it; the fact-assertion path (P-B6) sets
 // it when writing facts for durability and retention.
 const KeyAttr = "pr_key"
 
 // Key returns the scope key for a pull request: "{repo}#{number}". It is the
-// talon-db doc_id for the PR's document.
+// tln-db doc_id for the PR's document.
 func Key(repo string, number int) string {
 	return fmt.Sprintf("%s#%d", repo, number)
 }
@@ -39,26 +39,26 @@ func Key(repo string, number int) string {
 // Store(), so it can only ever see this PR's records.
 type Scope struct {
 	key   string
-	store talon.FactStore
+	store tln.FactStore
 }
 
 // NewScope creates an empty scope for the given key (see Key).
 func NewScope(key string) *Scope {
-	return &Scope{key: key, store: talon.NewMemoryStore()}
+	return &Scope{key: key, store: tln.NewMemoryStore()}
 }
 
 // Key reports the scope key.
 func (s *Scope) Key() string { return s.key }
 
 // Store returns the isolated fact store to run an evaluation against.
-func (s *Scope) Store() talon.FactStore { return s.store }
+func (s *Scope) Store() tln.FactStore { return s.store }
 
 // SeedGiven loads facts into this scope. body is a .tln.test `given` body — the
 // record/attr statements without the surrounding test/given braces. Handy for
 // tests; Assert is the production path.
 func (s *Scope) SeedGiven(ctx context.Context, body string) (int, error) {
 	src := fmt.Sprintf("test %q {\n  given {\n%s\n  }\n}", "scope "+s.key, body)
-	return talon.Seed(ctx, s.store, src)
+	return tln.Seed(ctx, s.store, src)
 }
 
 // prRecordID is the record id of the single PR record in a scope. A scope holds
@@ -76,17 +76,17 @@ const prRecordID = "1"
 // not present. Combined with P-B5's fresh per-evaluation store, that is how
 // retraction happens without a store-level delete.
 func (s *Scope) Assert(ctx context.Context, set Set) error {
-	out := make([]talon.Fact, 0, len(set)+2)
+	out := make([]tln.Fact, 0, len(set)+2)
 	out = append(out,
-		talon.Fact{RecordID: prRecordID, Attribute: ":record/type", Value: "pr"},
-		talon.Fact{RecordID: prRecordID, Attribute: ":attr/" + KeyAttr, Value: s.key},
+		tln.Fact{RecordID: prRecordID, Attribute: ":record/type", Value: "pr"},
+		tln.Fact{RecordID: prRecordID, Attribute: ":attr/" + KeyAttr, Value: s.key},
 	)
 	for attr, v := range set {
 		fv, err := factValue(v)
 		if err != nil {
 			return fmt.Errorf("facts: attribute %q: %w", attr, err)
 		}
-		out = append(out, talon.Fact{RecordID: prRecordID, Attribute: ":attr/" + attr, Value: fv})
+		out = append(out, tln.Fact{RecordID: prRecordID, Attribute: ":attr/" + attr, Value: fv})
 	}
 	return s.store.Assert(ctx, out)
 }

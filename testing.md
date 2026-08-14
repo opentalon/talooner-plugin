@@ -15,7 +15,7 @@ The interesting cases are the ones that don't fire:
   surfaces as a failure here rather than as a wrong review
 - a list-valued `pr.changed_files` against a `contains` predicate → **matches**
   when any element does
-  ([`talon-language#158`](https://github.com/opentalon/talon-language/issues/158),
+  ([`tln-language#158`](https://github.com/opentalon/tln-language/issues/158),
   landed 2026-08-07). Two cases beside it, both of which the fix leaves failing
   and neither of which is obvious from the rule text: an **empty**
   `pr.changed_files` matches nothing, and a glob-shaped `matches "**/*.css"`
@@ -36,23 +36,23 @@ The interesting cases are the ones that don't fire:
 - a `strict` base rule defeating a tenant `approve`
 - a tenant ruleset that redefines a `strict` base rule by name → `validate_ruleset`
   fails with the name collision, naming the imported file
-  ([`talon-language#159`](https://github.com/opentalon/talon-language/issues/159)).
+  ([`tln-language#159`](https://github.com/opentalon/tln-language/issues/159)).
   This is the one test standing between a tenant and deleting a safety rule
 - ruleset using `do deploy_preview` → `validate_ruleset` fails with "unknown
-  action". Also one per *misspelling* (`do aprove`): Talon validates no verb
+  action". Also one per *misspelling* (`do aprove`): Tln validates no verb
   names at all, so this check is the only thing between a typo and an action
   that silently never happens
 
 ## Ruleset tests
 
-Reuse `talon-language`'s `.tln.test` framework and `internal/testrunner`
+Reuse `tln-language`'s `.tln.test` framework and `internal/testrunner`
 directly. `validate_ruleset` and `talooner rules test` are the same code path —
 that's deliberate, so a tenant's CI and the plugin can never disagree about
 whether a ruleset is valid.
 
 Assert on the actions a rule produced, not only on which rows it matched:
 
-```talon
+```tln
 test "critical path tags the owner" {
   given {
     record 1 type "pr"
@@ -80,7 +80,7 @@ test "critical path tags the owner" {
 invisible in a suite that only checks the PRs it should. `given` takes list
 literals, including the empty list, which is how the `pr.changed_files` edges get
 exercised. Full reference:
-[`talon-language/docs/actions.md`](https://github.com/opentalon/talon-language/blob/main/docs/actions.md).
+[`tln-language/docs/actions.md`](https://github.com/opentalon/tln-language/blob/main/docs/actions.md).
 
 The base ruleset ships with its own `.tln.test`, and it is the tenant-facing
 example: a repo that copies it gets a policy with tests already attached.

@@ -14,7 +14,7 @@ import (
 // Recording which rules did NOT fire is what later lets explain_pr answer "why
 // wasn't this approved". Note: the per-condition reason a rule did not fire, and
 // the set suppressed by defeasible resolution, need engine introspection not yet
-// exposed by the talon SDK / defeasible resolution (P-C1); those enrich this
+// exposed by the tln SDK / defeasible resolution (P-C1); those enrich this
 // record later.
 type Decision struct {
 	Repo        string

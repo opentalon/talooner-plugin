@@ -27,7 +27,7 @@ func (s *Server) touchScope(key string) {
 // are never swept — they outlive facts (facts.md), so "why did the bot block
 // this?" still answers months later.
 //
-// It is a scan plus per-doc delete, because talon-db has no bulk delete. It is
+// It is a scan plus per-doc delete, because tln-db has no bulk delete. It is
 // idempotent and resumable: deleting an already-swept scope is a no-op, and an
 // interrupted run simply leaves the remainder for the next scan — so a mid-run
 // interruption never double-deletes or skips.

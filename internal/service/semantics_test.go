@@ -3,7 +3,7 @@ package service
 // Pure-function tests pinning the evaluator's two-valued semantics and the
 // list-operand edges. Facts in, actions out — no GitHub, no runners, no API
 // fixtures. The interesting cases are the ones that must NOT fire. If a future
-// talon-language bump changes any of these, it surfaces here as a failure rather
+// tln-language bump changes any of these, it surfaces here as a failure rather
 // than as a silently wrong review.
 
 import (
@@ -83,7 +83,7 @@ rule "Auto-approve non-critical" {
 }
 
 // A list-valued pr.changed_files matches `contains` when ANY element does
-// (talon-language#158).
+// (tln-language#158).
 func TestListContainsMatchesAnyElement(t *testing.T) {
 	const rs = `import "talooner.tln"
 

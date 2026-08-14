@@ -5,7 +5,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/opentalon/talon-language/pkg/talon"
+	"github.com/opentalon/tln-language/pkg/tln"
 
 	"github.com/opentalon/talooner-plugin/internal/facts"
 )
@@ -105,7 +105,7 @@ func TestReDerivationEndToEnd(t *testing.T) {
   do emit "has_preview"
 }`
 	fires := func(scope *facts.Scope, rule string) bool {
-		res, err := talon.Run(ctx, rule, talon.WithFactStore(scope.Store()))
+		res, err := tln.Run(ctx, rule, tln.WithFactStore(scope.Store()))
 		if err != nil {
 			t.Fatalf("run: %v", err)
 		}

@@ -8,7 +8,7 @@ Diagram: `diagrams.md` §5.
 `llm_review` is a `do` verb like any other — the engine returns it as an action,
 and this plugin is the host that performs it instead of handing it to the bot:
 
-```talon
+```tln
 rule "Check code against module docs" {
   for records where type == "pr"
     and attr "module.documentation_url" != ""

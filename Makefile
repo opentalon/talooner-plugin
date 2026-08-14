@@ -15,10 +15,10 @@ build:
 test:
 	go test -race -v ./...
 
-# Run the strict base ruleset's own .tln.test through the talon CLI tool. Also
+# Run the strict base ruleset's own .tln.test through the tln CLI tool. Also
 # covered by `go test ./internal/ruleset/`, but handy on its own.
 test-ruleset:
-	go tool github.com/opentalon/talon-language/cmd/talon test \
+	go tool github.com/opentalon/tln-language/cmd/tln test \
 		internal/ruleset/base/talooner.tln internal/ruleset/base/talooner.tln.test
 
 lint:

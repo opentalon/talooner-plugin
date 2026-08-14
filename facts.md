@@ -33,7 +33,7 @@ One scope per `(repo, pr)`. Contents:
   `when attr "pr.subscribed" == true` is expressible and there's one storage story
 - Decision + `explain` records
 
-"Scope" is a Talooner concept, not a `talon-db` one. The store is keyed
+"Scope" is a Talooner concept, not a `tln-db` one. The store is keyed
 `(entity_id, doc_id)` with `entity_id` pinned to one tenant per client, so a
 scope is **one document per PR**, keyed `{repo}#{number}` (`OPEN-QUESTIONS.md`
 A7). Two consequences that leak upward: scoping an evaluation to a single PR
@@ -50,7 +50,7 @@ the review (`diagrams.md` §4).
 Retention: facts expire after a grace period once the PR closes; decisions and
 `explain` outlive them, because "why did the bot block this?" gets asked months
 later. Defaults are 90 days for facts, forever for decisions, both configurable
-(`OPEN-QUESTIONS.md` B2). Note that `talon-db` has no bulk delete, so this is a
+(`OPEN-QUESTIONS.md` B2). Note that `tln-db` has no bulk delete, so this is a
 sweeper job phase 2 owes — `Scan` plus a per-doc `Delete` — not a config key
 someone sets.
 
@@ -97,10 +97,10 @@ wake.
 The single most dangerous detail in the system. Phase 0 settled it, and not the
 way this document originally assumed.
 
-`talon-language`'s evaluator is **two-valued**, with closed-world
+`tln-language`'s evaluator is **two-valued**, with closed-world
 negation-as-failure. There is no `unknown`. A missing attribute makes its pattern
 fail, which makes any enclosing `not` *succeed*
-(`internal/factstore/memory.go:691,773`; `talon-db/bboltstore/query.go:314` —
+(`internal/factstore/memory.go:691,773`; `tln-db/bboltstore/query.go:314` —
 both backends agree). Probed directly; see `OPEN-QUESTIONS.md` A1.
 
 The consequence splits by condition shape:
@@ -144,7 +144,7 @@ from `validate_ruleset`. See `llm-review.md`.
 `pr.changed_files` is a list, and every `pr.touches_*` predicate a tenant writes
 is a `define` over it:
 
-```talon
+```tln
 define "pr.touches_auth" {
   attr "pr.changed_files" contains "internal/auth/"
     or attr "pr.changed_files" contains "app/models/user.rb"
@@ -157,10 +157,10 @@ element contains" — existential quantification over the list.
 
 **It does, since 2026-08-07.** Phase 0 found it didn't: both evaluator paths
 type-asserted their operands to `string` and returned false for a list with no
-diagnostic. Fixed generally in `talon-language` rather than special-cased here —
-[`talon-language#158`](https://github.com/opentalon/talon-language/issues/158),
-landed in `talon-language` 35109f0 and `talon-db` e1c8ddb. The two layers now
-agree: `talon-db/internal/index/terms.go:124` indexes each array element as its
+diagnostic. Fixed generally in `tln-language` rather than special-cased here —
+[`tln-language#158`](https://github.com/opentalon/tln-language/issues/158),
+landed in `tln-language` 35109f0 and `tln-db` e1c8ddb. The two layers now
+agree: `tln-db/internal/index/terms.go:124` indexes each array element as its
 own inverted term so candidate gathering finds the document, and the verify step
 no longer rejects it.
 
