@@ -49,6 +49,11 @@ func (s *Server) evaluatePR(req plugin.Request) plugin.Response {
 		return errorResponse(req, err) // names the offending attribute
 	}
 
+	mods, err := parseModules(req.Args["modules"])
+	if err != nil {
+		return errorResponse(req, err)
+	}
+
 	ctx := context.Background()
 
 	// Full re-derivation over the durable prior: custom tenant-CI facts asserted
@@ -61,6 +66,9 @@ func (s *Server) evaluatePR(req plugin.Request) plugin.Response {
 	// in rules. The plugin owns it (set via set_subscription), so it is injected
 	// here rather than taken from the bot's request.
 	state["pr.subscribed"] = s.subscribedFor(key)
+
+	// Bind module.* to the primary touched module (one evaluation per PR).
+	injectModuleFacts(state, mods)
 
 	scope := facts.NewScope(key)
 	if err := scope.Assert(ctx, state); err != nil {

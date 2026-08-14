@@ -584,14 +584,20 @@ func (x *Diagnostic) GetRule() string {
 // EvaluatePrRequest is the evaluate_pr payload. facts_json carries the extracted
 // PR facts as JSON (the `facts` arg on the wire); the rest map to string args.
 type EvaluatePrRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Repo          string                 `protobuf:"bytes,1,opt,name=repo,proto3" json:"repo,omitempty"`
-	Pr            int32                  `protobuf:"varint,2,opt,name=pr,proto3" json:"pr,omitempty"`
-	HeadSha       string                 `protobuf:"bytes,3,opt,name=head_sha,json=headSha,proto3" json:"head_sha,omitempty"`
-	FactsJson     string                 `protobuf:"bytes,4,opt,name=facts_json,json=factsJson,proto3" json:"facts_json,omitempty"`
-	Ruleset       string                 `protobuf:"bytes,5,opt,name=ruleset,proto3" json:"ruleset,omitempty"`
-	Mode          EvaluateMode           `protobuf:"varint,6,opt,name=mode,proto3,enum=talooner.v1.EvaluateMode" json:"mode,omitempty"`
-	Force         bool                   `protobuf:"varint,7,opt,name=force,proto3" json:"force,omitempty"` // bypass the llm_review fact cache for this evaluation only
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	Repo      string                 `protobuf:"bytes,1,opt,name=repo,proto3" json:"repo,omitempty"`
+	Pr        int32                  `protobuf:"varint,2,opt,name=pr,proto3" json:"pr,omitempty"`
+	HeadSha   string                 `protobuf:"bytes,3,opt,name=head_sha,json=headSha,proto3" json:"head_sha,omitempty"`
+	FactsJson string                 `protobuf:"bytes,4,opt,name=facts_json,json=factsJson,proto3" json:"facts_json,omitempty"`
+	Ruleset   string                 `protobuf:"bytes,5,opt,name=ruleset,proto3" json:"ruleset,omitempty"`
+	Mode      EvaluateMode           `protobuf:"varint,6,opt,name=mode,proto3,enum=talooner.v1.EvaluateMode" json:"mode,omitempty"`
+	Force     bool                   `protobuf:"varint,7,opt,name=force,proto3" json:"force,omitempty"` // bypass the llm_review fact cache for this evaluation only
+	// modules are the tenant modules this PR touched, resolved bot-side from
+	// modules.yaml + the diff. The plugin evaluates the PR ONCE, binding module.*
+	// to the primary touched module (most changed lines, ties by path order), and
+	// asserts module.documentation_urls and module.touched_count so a ruleset can
+	// compensate (facts.md, "Cardinality: one evaluation per PR").
+	Modules       []*TouchedModule `protobuf:"bytes,8,rep,name=modules,proto3" json:"modules,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -675,6 +681,74 @@ func (x *EvaluatePrRequest) GetForce() bool {
 	return false
 }
 
+func (x *EvaluatePrRequest) GetModules() []*TouchedModule {
+	if x != nil {
+		return x.Modules
+	}
+	return nil
+}
+
+// TouchedModule is one module a PR changed, with how many lines and its docs.
+type TouchedModule struct {
+	state             protoimpl.MessageState `protogen:"open.v1"`
+	Name              string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"` // module name / path, e.g. "internal/auth"
+	ChangedLines      int32                  `protobuf:"varint,2,opt,name=changed_lines,json=changedLines,proto3" json:"changed_lines,omitempty"`
+	DocumentationUrls []string               `protobuf:"bytes,3,rep,name=documentation_urls,json=documentationUrls,proto3" json:"documentation_urls,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
+}
+
+func (x *TouchedModule) Reset() {
+	*x = TouchedModule{}
+	mi := &file_talooner_v1_talooner_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TouchedModule) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TouchedModule) ProtoMessage() {}
+
+func (x *TouchedModule) ProtoReflect() protoreflect.Message {
+	mi := &file_talooner_v1_talooner_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TouchedModule.ProtoReflect.Descriptor instead.
+func (*TouchedModule) Descriptor() ([]byte, []int) {
+	return file_talooner_v1_talooner_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *TouchedModule) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *TouchedModule) GetChangedLines() int32 {
+	if x != nil {
+		return x.ChangedLines
+	}
+	return 0
+}
+
+func (x *TouchedModule) GetDocumentationUrls() []string {
+	if x != nil {
+		return x.DocumentationUrls
+	}
+	return nil
+}
+
 // EvaluatePrResponse is the decision. In execute mode `actions` is populated and
 // `plan` is empty; in plan mode `plan` is populated and `actions` is empty —
 // they are distinct fields so a plan can never be mistaken for something to run.
@@ -690,7 +764,7 @@ type EvaluatePrResponse struct {
 
 func (x *EvaluatePrResponse) Reset() {
 	*x = EvaluatePrResponse{}
-	mi := &file_talooner_v1_talooner_proto_msgTypes[6]
+	mi := &file_talooner_v1_talooner_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -702,7 +776,7 @@ func (x *EvaluatePrResponse) String() string {
 func (*EvaluatePrResponse) ProtoMessage() {}
 
 func (x *EvaluatePrResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_talooner_v1_talooner_proto_msgTypes[6]
+	mi := &file_talooner_v1_talooner_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -715,7 +789,7 @@ func (x *EvaluatePrResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EvaluatePrResponse.ProtoReflect.Descriptor instead.
 func (*EvaluatePrResponse) Descriptor() ([]byte, []int) {
-	return file_talooner_v1_talooner_proto_rawDescGZIP(), []int{6}
+	return file_talooner_v1_talooner_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *EvaluatePrResponse) GetActions() []*Action {
@@ -756,7 +830,7 @@ type ValidateRulesetRequest struct {
 
 func (x *ValidateRulesetRequest) Reset() {
 	*x = ValidateRulesetRequest{}
-	mi := &file_talooner_v1_talooner_proto_msgTypes[7]
+	mi := &file_talooner_v1_talooner_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -768,7 +842,7 @@ func (x *ValidateRulesetRequest) String() string {
 func (*ValidateRulesetRequest) ProtoMessage() {}
 
 func (x *ValidateRulesetRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_talooner_v1_talooner_proto_msgTypes[7]
+	mi := &file_talooner_v1_talooner_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -781,7 +855,7 @@ func (x *ValidateRulesetRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ValidateRulesetRequest.ProtoReflect.Descriptor instead.
 func (*ValidateRulesetRequest) Descriptor() ([]byte, []int) {
-	return file_talooner_v1_talooner_proto_rawDescGZIP(), []int{7}
+	return file_talooner_v1_talooner_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *ValidateRulesetRequest) GetRuleset() string {
@@ -801,7 +875,7 @@ type ValidateRulesetResponse struct {
 
 func (x *ValidateRulesetResponse) Reset() {
 	*x = ValidateRulesetResponse{}
-	mi := &file_talooner_v1_talooner_proto_msgTypes[8]
+	mi := &file_talooner_v1_talooner_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -813,7 +887,7 @@ func (x *ValidateRulesetResponse) String() string {
 func (*ValidateRulesetResponse) ProtoMessage() {}
 
 func (x *ValidateRulesetResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_talooner_v1_talooner_proto_msgTypes[8]
+	mi := &file_talooner_v1_talooner_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -826,7 +900,7 @@ func (x *ValidateRulesetResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ValidateRulesetResponse.ProtoReflect.Descriptor instead.
 func (*ValidateRulesetResponse) Descriptor() ([]byte, []int) {
-	return file_talooner_v1_talooner_proto_rawDescGZIP(), []int{8}
+	return file_talooner_v1_talooner_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *ValidateRulesetResponse) GetValid() bool {
@@ -859,7 +933,7 @@ type WhoamiResponse struct {
 
 func (x *WhoamiResponse) Reset() {
 	*x = WhoamiResponse{}
-	mi := &file_talooner_v1_talooner_proto_msgTypes[9]
+	mi := &file_talooner_v1_talooner_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -871,7 +945,7 @@ func (x *WhoamiResponse) String() string {
 func (*WhoamiResponse) ProtoMessage() {}
 
 func (x *WhoamiResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_talooner_v1_talooner_proto_msgTypes[9]
+	mi := &file_talooner_v1_talooner_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -884,7 +958,7 @@ func (x *WhoamiResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WhoamiResponse.ProtoReflect.Descriptor instead.
 func (*WhoamiResponse) Descriptor() ([]byte, []int) {
-	return file_talooner_v1_talooner_proto_rawDescGZIP(), []int{9}
+	return file_talooner_v1_talooner_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *WhoamiResponse) GetTenant() string {
@@ -933,7 +1007,7 @@ type Quota struct {
 
 func (x *Quota) Reset() {
 	*x = Quota{}
-	mi := &file_talooner_v1_talooner_proto_msgTypes[10]
+	mi := &file_talooner_v1_talooner_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -945,7 +1019,7 @@ func (x *Quota) String() string {
 func (*Quota) ProtoMessage() {}
 
 func (x *Quota) ProtoReflect() protoreflect.Message {
-	mi := &file_talooner_v1_talooner_proto_msgTypes[10]
+	mi := &file_talooner_v1_talooner_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -958,7 +1032,7 @@ func (x *Quota) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Quota.ProtoReflect.Descriptor instead.
 func (*Quota) Descriptor() ([]byte, []int) {
-	return file_talooner_v1_talooner_proto_rawDescGZIP(), []int{10}
+	return file_talooner_v1_talooner_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *Quota) GetLlmCallsUsed() int64 {
@@ -988,7 +1062,7 @@ type IsSubscribedResponse struct {
 
 func (x *IsSubscribedResponse) Reset() {
 	*x = IsSubscribedResponse{}
-	mi := &file_talooner_v1_talooner_proto_msgTypes[11]
+	mi := &file_talooner_v1_talooner_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1000,7 +1074,7 @@ func (x *IsSubscribedResponse) String() string {
 func (*IsSubscribedResponse) ProtoMessage() {}
 
 func (x *IsSubscribedResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_talooner_v1_talooner_proto_msgTypes[11]
+	mi := &file_talooner_v1_talooner_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1013,7 +1087,7 @@ func (x *IsSubscribedResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use IsSubscribedResponse.ProtoReflect.Descriptor instead.
 func (*IsSubscribedResponse) Descriptor() ([]byte, []int) {
-	return file_talooner_v1_talooner_proto_rawDescGZIP(), []int{11}
+	return file_talooner_v1_talooner_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *IsSubscribedResponse) GetSubscribed() bool {
@@ -1040,7 +1114,7 @@ type SetSubscriptionResponse struct {
 
 func (x *SetSubscriptionResponse) Reset() {
 	*x = SetSubscriptionResponse{}
-	mi := &file_talooner_v1_talooner_proto_msgTypes[12]
+	mi := &file_talooner_v1_talooner_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1052,7 +1126,7 @@ func (x *SetSubscriptionResponse) String() string {
 func (*SetSubscriptionResponse) ProtoMessage() {}
 
 func (x *SetSubscriptionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_talooner_v1_talooner_proto_msgTypes[12]
+	mi := &file_talooner_v1_talooner_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1065,7 +1139,7 @@ func (x *SetSubscriptionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetSubscriptionResponse.ProtoReflect.Descriptor instead.
 func (*SetSubscriptionResponse) Descriptor() ([]byte, []int) {
-	return file_talooner_v1_talooner_proto_rawDescGZIP(), []int{12}
+	return file_talooner_v1_talooner_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *SetSubscriptionResponse) GetSubscribed() bool {
@@ -1090,7 +1164,7 @@ type AssertFactsResponse struct {
 
 func (x *AssertFactsResponse) Reset() {
 	*x = AssertFactsResponse{}
-	mi := &file_talooner_v1_talooner_proto_msgTypes[13]
+	mi := &file_talooner_v1_talooner_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1102,7 +1176,7 @@ func (x *AssertFactsResponse) String() string {
 func (*AssertFactsResponse) ProtoMessage() {}
 
 func (x *AssertFactsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_talooner_v1_talooner_proto_msgTypes[13]
+	mi := &file_talooner_v1_talooner_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1115,7 +1189,7 @@ func (x *AssertFactsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AssertFactsResponse.ProtoReflect.Descriptor instead.
 func (*AssertFactsResponse) Descriptor() ([]byte, []int) {
-	return file_talooner_v1_talooner_proto_rawDescGZIP(), []int{13}
+	return file_talooner_v1_talooner_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *AssertFactsResponse) GetAccepted() []string {
@@ -1143,7 +1217,7 @@ type RejectedFact struct {
 
 func (x *RejectedFact) Reset() {
 	*x = RejectedFact{}
-	mi := &file_talooner_v1_talooner_proto_msgTypes[14]
+	mi := &file_talooner_v1_talooner_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1155,7 +1229,7 @@ func (x *RejectedFact) String() string {
 func (*RejectedFact) ProtoMessage() {}
 
 func (x *RejectedFact) ProtoReflect() protoreflect.Message {
-	mi := &file_talooner_v1_talooner_proto_msgTypes[14]
+	mi := &file_talooner_v1_talooner_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1168,7 +1242,7 @@ func (x *RejectedFact) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RejectedFact.ProtoReflect.Descriptor instead.
 func (*RejectedFact) Descriptor() ([]byte, []int) {
-	return file_talooner_v1_talooner_proto_rawDescGZIP(), []int{14}
+	return file_talooner_v1_talooner_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *RejectedFact) GetAttribute() string {
@@ -1197,7 +1271,7 @@ type ExplainPrResponse struct {
 
 func (x *ExplainPrResponse) Reset() {
 	*x = ExplainPrResponse{}
-	mi := &file_talooner_v1_talooner_proto_msgTypes[15]
+	mi := &file_talooner_v1_talooner_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1209,7 +1283,7 @@ func (x *ExplainPrResponse) String() string {
 func (*ExplainPrResponse) ProtoMessage() {}
 
 func (x *ExplainPrResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_talooner_v1_talooner_proto_msgTypes[15]
+	mi := &file_talooner_v1_talooner_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1222,7 +1296,7 @@ func (x *ExplainPrResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExplainPrResponse.ProtoReflect.Descriptor instead.
 func (*ExplainPrResponse) Descriptor() ([]byte, []int) {
-	return file_talooner_v1_talooner_proto_rawDescGZIP(), []int{15}
+	return file_talooner_v1_talooner_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *ExplainPrResponse) GetExplain() *Explain {
@@ -1262,7 +1336,7 @@ const file_talooner_v1_talooner_proto_rawDesc = "" +
 	"\amessage\x18\x02 \x01(\tR\amessage\x12\x12\n" +
 	"\x04line\x18\x03 \x01(\x05R\x04line\x12\x16\n" +
 	"\x06column\x18\x04 \x01(\x05R\x06column\x12\x12\n" +
-	"\x04rule\x18\x05 \x01(\tR\x04rule\"\xd0\x01\n" +
+	"\x04rule\x18\x05 \x01(\tR\x04rule\"\x86\x02\n" +
 	"\x11EvaluatePrRequest\x12\x12\n" +
 	"\x04repo\x18\x01 \x01(\tR\x04repo\x12\x0e\n" +
 	"\x02pr\x18\x02 \x01(\x05R\x02pr\x12\x19\n" +
@@ -1271,7 +1345,12 @@ const file_talooner_v1_talooner_proto_rawDesc = "" +
 	"facts_json\x18\x04 \x01(\tR\tfactsJson\x12\x18\n" +
 	"\aruleset\x18\x05 \x01(\tR\aruleset\x12-\n" +
 	"\x04mode\x18\x06 \x01(\x0e2\x19.talooner.v1.EvaluateModeR\x04mode\x12\x14\n" +
-	"\x05force\x18\a \x01(\bR\x05force\"\xce\x01\n" +
+	"\x05force\x18\a \x01(\bR\x05force\x124\n" +
+	"\amodules\x18\b \x03(\v2\x1a.talooner.v1.TouchedModuleR\amodules\"w\n" +
+	"\rTouchedModule\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12#\n" +
+	"\rchanged_lines\x18\x02 \x01(\x05R\fchangedLines\x12-\n" +
+	"\x12documentation_urls\x18\x03 \x03(\tR\x11documentationUrls\"\xce\x01\n" +
 	"\x12EvaluatePrResponse\x12-\n" +
 	"\aactions\x18\x01 \x03(\v2\x13.talooner.v1.ActionR\aactions\x12'\n" +
 	"\x04plan\x18\x02 \x03(\v2\x13.talooner.v1.ActionR\x04plan\x12.\n" +
@@ -1341,7 +1420,7 @@ func file_talooner_v1_talooner_proto_rawDescGZIP() []byte {
 }
 
 var file_talooner_v1_talooner_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
-var file_talooner_v1_talooner_proto_msgTypes = make([]protoimpl.MessageInfo, 16)
+var file_talooner_v1_talooner_proto_msgTypes = make([]protoimpl.MessageInfo, 17)
 var file_talooner_v1_talooner_proto_goTypes = []any{
 	(EvaluateMode)(0),               // 0: talooner.v1.EvaluateMode
 	(Verb)(0),                       // 1: talooner.v1.Verb
@@ -1352,35 +1431,37 @@ var file_talooner_v1_talooner_proto_goTypes = []any{
 	(*Explain)(nil),                 // 6: talooner.v1.Explain
 	(*Diagnostic)(nil),              // 7: talooner.v1.Diagnostic
 	(*EvaluatePrRequest)(nil),       // 8: talooner.v1.EvaluatePrRequest
-	(*EvaluatePrResponse)(nil),      // 9: talooner.v1.EvaluatePrResponse
-	(*ValidateRulesetRequest)(nil),  // 10: talooner.v1.ValidateRulesetRequest
-	(*ValidateRulesetResponse)(nil), // 11: talooner.v1.ValidateRulesetResponse
-	(*WhoamiResponse)(nil),          // 12: talooner.v1.WhoamiResponse
-	(*Quota)(nil),                   // 13: talooner.v1.Quota
-	(*IsSubscribedResponse)(nil),    // 14: talooner.v1.IsSubscribedResponse
-	(*SetSubscriptionResponse)(nil), // 15: talooner.v1.SetSubscriptionResponse
-	(*AssertFactsResponse)(nil),     // 16: talooner.v1.AssertFactsResponse
-	(*RejectedFact)(nil),            // 17: talooner.v1.RejectedFact
-	(*ExplainPrResponse)(nil),       // 18: talooner.v1.ExplainPrResponse
+	(*TouchedModule)(nil),           // 9: talooner.v1.TouchedModule
+	(*EvaluatePrResponse)(nil),      // 10: talooner.v1.EvaluatePrResponse
+	(*ValidateRulesetRequest)(nil),  // 11: talooner.v1.ValidateRulesetRequest
+	(*ValidateRulesetResponse)(nil), // 12: talooner.v1.ValidateRulesetResponse
+	(*WhoamiResponse)(nil),          // 13: talooner.v1.WhoamiResponse
+	(*Quota)(nil),                   // 14: talooner.v1.Quota
+	(*IsSubscribedResponse)(nil),    // 15: talooner.v1.IsSubscribedResponse
+	(*SetSubscriptionResponse)(nil), // 16: talooner.v1.SetSubscriptionResponse
+	(*AssertFactsResponse)(nil),     // 17: talooner.v1.AssertFactsResponse
+	(*RejectedFact)(nil),            // 18: talooner.v1.RejectedFact
+	(*ExplainPrResponse)(nil),       // 19: talooner.v1.ExplainPrResponse
 }
 var file_talooner_v1_talooner_proto_depIdxs = []int32{
 	1,  // 0: talooner.v1.Action.verb:type_name -> talooner.v1.Verb
 	5,  // 1: talooner.v1.Explain.firings:type_name -> talooner.v1.RuleFiring
 	2,  // 2: talooner.v1.Diagnostic.severity:type_name -> talooner.v1.Severity
 	0,  // 3: talooner.v1.EvaluatePrRequest.mode:type_name -> talooner.v1.EvaluateMode
-	3,  // 4: talooner.v1.EvaluatePrResponse.actions:type_name -> talooner.v1.Action
-	3,  // 5: talooner.v1.EvaluatePrResponse.plan:type_name -> talooner.v1.Action
-	6,  // 6: talooner.v1.EvaluatePrResponse.explain:type_name -> talooner.v1.Explain
-	4,  // 7: talooner.v1.EvaluatePrResponse.warnings:type_name -> talooner.v1.Warning
-	7,  // 8: talooner.v1.ValidateRulesetResponse.diagnostics:type_name -> talooner.v1.Diagnostic
-	13, // 9: talooner.v1.WhoamiResponse.quota:type_name -> talooner.v1.Quota
-	17, // 10: talooner.v1.AssertFactsResponse.rejected:type_name -> talooner.v1.RejectedFact
-	6,  // 11: talooner.v1.ExplainPrResponse.explain:type_name -> talooner.v1.Explain
-	12, // [12:12] is the sub-list for method output_type
-	12, // [12:12] is the sub-list for method input_type
-	12, // [12:12] is the sub-list for extension type_name
-	12, // [12:12] is the sub-list for extension extendee
-	0,  // [0:12] is the sub-list for field type_name
+	9,  // 4: talooner.v1.EvaluatePrRequest.modules:type_name -> talooner.v1.TouchedModule
+	3,  // 5: talooner.v1.EvaluatePrResponse.actions:type_name -> talooner.v1.Action
+	3,  // 6: talooner.v1.EvaluatePrResponse.plan:type_name -> talooner.v1.Action
+	6,  // 7: talooner.v1.EvaluatePrResponse.explain:type_name -> talooner.v1.Explain
+	4,  // 8: talooner.v1.EvaluatePrResponse.warnings:type_name -> talooner.v1.Warning
+	7,  // 9: talooner.v1.ValidateRulesetResponse.diagnostics:type_name -> talooner.v1.Diagnostic
+	14, // 10: talooner.v1.WhoamiResponse.quota:type_name -> talooner.v1.Quota
+	18, // 11: talooner.v1.AssertFactsResponse.rejected:type_name -> talooner.v1.RejectedFact
+	6,  // 12: talooner.v1.ExplainPrResponse.explain:type_name -> talooner.v1.Explain
+	13, // [13:13] is the sub-list for method output_type
+	13, // [13:13] is the sub-list for method input_type
+	13, // [13:13] is the sub-list for extension type_name
+	13, // [13:13] is the sub-list for extension extendee
+	0,  // [0:13] is the sub-list for field type_name
 }
 
 func init() { file_talooner_v1_talooner_proto_init() }
@@ -1394,7 +1475,7 @@ func file_talooner_v1_talooner_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_talooner_v1_talooner_proto_rawDesc), len(file_talooner_v1_talooner_proto_rawDesc)),
 			NumEnums:      3,
-			NumMessages:   16,
+			NumMessages:   17,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

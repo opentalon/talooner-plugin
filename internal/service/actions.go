@@ -21,6 +21,7 @@ func registerActions(s *Server) {
 			{Name: "ruleset", Description: "Tenant ruleset text", Type: "string", Required: true},
 			{Name: "mode", Description: "execute (default) or plan", Type: "string", Required: false},
 			{Name: "force", Description: "Bypass the llm_review fact cache for this evaluation (bool)", Type: "string", Required: false},
+			{Name: "modules", Description: "Touched modules (JSON list of {name, changed_lines, documentation_urls}); module.* binds to the primary", Type: "string", Required: false},
 		},
 	}, s.evaluatePR)
 
