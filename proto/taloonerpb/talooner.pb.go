@@ -1185,6 +1185,53 @@ func (x *RejectedFact) GetReason() string {
 	return ""
 }
 
+// ExplainPrResponse answers explain_pr: the persisted explanation for a PR's
+// decision at a given head sha. Because the decision and its explanation outlive
+// the facts (facts.md), this renders even after retention has swept the facts.
+type ExplainPrResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Explain       *Explain               `protobuf:"bytes,1,opt,name=explain,proto3" json:"explain,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ExplainPrResponse) Reset() {
+	*x = ExplainPrResponse{}
+	mi := &file_talooner_v1_talooner_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ExplainPrResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ExplainPrResponse) ProtoMessage() {}
+
+func (x *ExplainPrResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_talooner_v1_talooner_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ExplainPrResponse.ProtoReflect.Descriptor instead.
+func (*ExplainPrResponse) Descriptor() ([]byte, []int) {
+	return file_talooner_v1_talooner_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *ExplainPrResponse) GetExplain() *Explain {
+	if x != nil {
+		return x.Explain
+	}
+	return nil
+}
+
 var File_talooner_v1_talooner_proto protoreflect.FileDescriptor
 
 const file_talooner_v1_talooner_proto_rawDesc = "" +
@@ -1258,7 +1305,9 @@ const file_talooner_v1_talooner_proto_rawDesc = "" +
 	"\brejected\x18\x02 \x03(\v2\x19.talooner.v1.RejectedFactR\brejected\"D\n" +
 	"\fRejectedFact\x12\x1c\n" +
 	"\tattribute\x18\x01 \x01(\tR\tattribute\x12\x16\n" +
-	"\x06reason\x18\x02 \x01(\tR\x06reason*`\n" +
+	"\x06reason\x18\x02 \x01(\tR\x06reason\"C\n" +
+	"\x11ExplainPrResponse\x12.\n" +
+	"\aexplain\x18\x01 \x01(\v2\x14.talooner.v1.ExplainR\aexplain*`\n" +
 	"\fEvaluateMode\x12\x1d\n" +
 	"\x19EVALUATE_MODE_UNSPECIFIED\x10\x00\x12\x19\n" +
 	"\x15EVALUATE_MODE_EXECUTE\x10\x01\x12\x16\n" +
@@ -1292,7 +1341,7 @@ func file_talooner_v1_talooner_proto_rawDescGZIP() []byte {
 }
 
 var file_talooner_v1_talooner_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
-var file_talooner_v1_talooner_proto_msgTypes = make([]protoimpl.MessageInfo, 15)
+var file_talooner_v1_talooner_proto_msgTypes = make([]protoimpl.MessageInfo, 16)
 var file_talooner_v1_talooner_proto_goTypes = []any{
 	(EvaluateMode)(0),               // 0: talooner.v1.EvaluateMode
 	(Verb)(0),                       // 1: talooner.v1.Verb
@@ -1312,6 +1361,7 @@ var file_talooner_v1_talooner_proto_goTypes = []any{
 	(*SetSubscriptionResponse)(nil), // 15: talooner.v1.SetSubscriptionResponse
 	(*AssertFactsResponse)(nil),     // 16: talooner.v1.AssertFactsResponse
 	(*RejectedFact)(nil),            // 17: talooner.v1.RejectedFact
+	(*ExplainPrResponse)(nil),       // 18: talooner.v1.ExplainPrResponse
 }
 var file_talooner_v1_talooner_proto_depIdxs = []int32{
 	1,  // 0: talooner.v1.Action.verb:type_name -> talooner.v1.Verb
@@ -1325,11 +1375,12 @@ var file_talooner_v1_talooner_proto_depIdxs = []int32{
 	7,  // 8: talooner.v1.ValidateRulesetResponse.diagnostics:type_name -> talooner.v1.Diagnostic
 	13, // 9: talooner.v1.WhoamiResponse.quota:type_name -> talooner.v1.Quota
 	17, // 10: talooner.v1.AssertFactsResponse.rejected:type_name -> talooner.v1.RejectedFact
-	11, // [11:11] is the sub-list for method output_type
-	11, // [11:11] is the sub-list for method input_type
-	11, // [11:11] is the sub-list for extension type_name
-	11, // [11:11] is the sub-list for extension extendee
-	0,  // [0:11] is the sub-list for field type_name
+	6,  // 11: talooner.v1.ExplainPrResponse.explain:type_name -> talooner.v1.Explain
+	12, // [12:12] is the sub-list for method output_type
+	12, // [12:12] is the sub-list for method input_type
+	12, // [12:12] is the sub-list for extension type_name
+	12, // [12:12] is the sub-list for extension extendee
+	0,  // [0:12] is the sub-list for field type_name
 }
 
 func init() { file_talooner_v1_talooner_proto_init() }
@@ -1343,7 +1394,7 @@ func file_talooner_v1_talooner_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_talooner_v1_talooner_proto_rawDesc), len(file_talooner_v1_talooner_proto_rawDesc)),
 			NumEnums:      3,
-			NumMessages:   15,
+			NumMessages:   16,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

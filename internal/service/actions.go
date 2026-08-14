@@ -1,8 +1,6 @@
 package service
 
 import (
-	"fmt"
-
 	"github.com/opentalon/opentalon/pkg/plugin"
 )
 
@@ -10,9 +8,6 @@ import (
 // "Actions to declare"). Every action is user_only. read_only marks the pure
 // queries — is_subscribed, validate_ruleset, explain_pr, whoami — so the host
 // skips its per-call confirmation gate; the rest mutate state.
-//
-// Handlers are stubbed with notImplemented until their owning phase lands; the
-// referenced issue is where each body arrives.
 func registerActions(s *Server) {
 	s.register(plugin.ActionMsg{
 		Name:        "evaluate_pr",
@@ -82,7 +77,7 @@ func registerActions(s *Server) {
 			{Name: "pr", Description: "Pull request number", Type: "string", Required: true},
 			{Name: "head_sha", Description: "Head commit SHA to explain", Type: "string", Required: true},
 		},
-	}, notImplemented("P-C5"))
+	}, s.explainPR)
 
 	s.register(plugin.ActionMsg{
 		Name:        "whoami",
@@ -93,15 +88,4 @@ func registerActions(s *Server) {
 			{Name: ArgProtocolVersion, Description: "Caller's protocol version; a below-floor value is rejected", Type: "string", Required: false},
 		},
 	}, s.whoami)
-}
-
-// notImplemented is a placeholder handler for an action whose body has not
-// landed yet. issue names the phase that fills it in.
-func notImplemented(issue string) HandlerFunc {
-	return func(req plugin.Request) plugin.Response {
-		return plugin.Response{
-			CallID: req.ID,
-			Error:  fmt.Sprintf("talooner: action %q not implemented yet (%s)", req.Action, issue),
-		}
-	}
 }
