@@ -141,6 +141,20 @@ message EvaluatePrRequest {
   string ruleset = 5;
   EvaluateMode mode = 6;
   bool force = 7; // bypass the llm_review fact cache for this evaluation only
+
+  // modules are the tenant modules this PR touched, resolved bot-side from
+  // modules.yaml + the diff. The plugin evaluates the PR ONCE, binding module.*
+  // to the primary touched module (most changed lines, ties by path order), and
+  // asserts module.documentation_urls and module.touched_count so a ruleset can
+  // compensate (facts.md, "Cardinality: one evaluation per PR").
+  repeated TouchedModule modules = 8;
+}
+
+// TouchedModule is one module a PR changed, with how many lines and its docs.
+message TouchedModule {
+  string name = 1; // module name / path, e.g. "internal/auth"
+  int32 changed_lines = 2;
+  repeated string documentation_urls = 3;
 }
 
 // EvaluatePrResponse is the decision. In execute mode `actions` is populated and
