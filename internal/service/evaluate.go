@@ -65,8 +65,17 @@ func (s *Server) evaluatePR(req plugin.Request) plugin.Response {
 		return errorResponse(req, fmt.Errorf("talooner: evaluate ruleset: %w", err))
 	}
 
-	actions, warnings := mapActions(result.Actions)
-	fired := firedRuleNames(result.Actions)
+	// Defeasible resolution. The engine has already settled `overrides`; this
+	// applies the remaining strict > priority precedence to any standing
+	// approve/block conflict, dropping the defeated side's actions or warning on
+	// an unresolved tie (P-C1).
+	resolved, conflictWarnings := resolveConflicts(result.Actions, ruleset.RuleMeta(tenantRuleset))
+
+	actions, warnings := mapActions(resolved)
+	for _, w := range conflictWarnings {
+		warnings = append(warnings, &taloonerpb.Warning{Code: "unresolved_conflict", Message: w})
+	}
+	fired := firedRuleNames(resolved)
 	notFired := subtract(ruleset.RuleNames(tenantRuleset), fired)
 	explain := buildExplain(fired)
 
