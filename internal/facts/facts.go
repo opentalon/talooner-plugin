@@ -54,11 +54,60 @@ func (s *Scope) Key() string { return s.key }
 func (s *Scope) Store() talon.FactStore { return s.store }
 
 // SeedGiven loads facts into this scope. body is a .tln.test `given` body — the
-// record/attr statements without the surrounding test/given braces. It is the
-// seam the fact-assertion path (P-B6) and evaluate_pr (P-B7) build on; the
-// full-re-derivation semantics layer on top there. Returns the number of
-// records written.
+// record/attr statements without the surrounding test/given braces. Handy for
+// tests; Assert is the production path.
 func (s *Scope) SeedGiven(ctx context.Context, body string) (int, error) {
 	src := fmt.Sprintf("test %q {\n  given {\n%s\n  }\n}", "scope "+s.key, body)
 	return talon.Seed(ctx, s.store, src)
+}
+
+// prRecordID is the record id of the single PR record in a scope. A scope holds
+// one document per PR (facts.md), so one record suffices; isolation comes from
+// the scope, not the id.
+const prRecordID = "1"
+
+// Assert writes a fact Set into this scope as the PR record, tagged with
+// pr_key = the scope key. It asserts EAV triples directly (rather than through
+// the test DSL) so a fact value carrying newlines or quotes — e.g. pr.body —
+// round-trips verbatim.
+//
+// Assert materialises a complete fact set; the caller is expected to pass the
+// result of Rederive so that facts absent from the latest request are simply
+// not present. Combined with P-B5's fresh per-evaluation store, that is how
+// retraction happens without a store-level delete.
+func (s *Scope) Assert(ctx context.Context, set Set) error {
+	out := make([]talon.Fact, 0, len(set)+2)
+	out = append(out,
+		talon.Fact{RecordID: prRecordID, Attribute: ":record/type", Value: "pr"},
+		talon.Fact{RecordID: prRecordID, Attribute: ":attr/" + KeyAttr, Value: s.key},
+	)
+	for attr, v := range set {
+		fv, err := factValue(v)
+		if err != nil {
+			return fmt.Errorf("facts: attribute %q: %w", attr, err)
+		}
+		out = append(out, talon.Fact{RecordID: prRecordID, Attribute: ":attr/" + attr, Value: fv})
+	}
+	return s.store.Assert(ctx, out)
+}
+
+// factValue converts a Set value to the concrete type the fact store expects:
+// numbers as float64, string lists as []any.
+func factValue(v any) (any, error) {
+	switch x := v.(type) {
+	case bool, string, float64:
+		return x, nil
+	case int:
+		return float64(x), nil
+	case int64:
+		return float64(x), nil
+	case []string:
+		lst := make([]any, len(x))
+		for i, s := range x {
+			lst[i] = s
+		}
+		return lst, nil
+	default:
+		return nil, fmt.Errorf("unsupported value type %T", v)
+	}
 }
