@@ -49,6 +49,11 @@ type Server struct {
 	// backs it in a cluster. Guarded by subMu for concurrent action calls.
 	subMu sync.Mutex
 	subs  map[string]subscription
+
+	// decision audit records, keyed by (repo, pr, head_sha). Persisted before
+	// each evaluate_pr response leaves; queried by explain_pr.
+	decMu     sync.Mutex
+	decisions map[string]Decision
 }
 
 // subscription is a PR's subscription state and the unix time (seconds) the
@@ -64,12 +69,13 @@ type subscription struct {
 func New() *Server {
 	empty, _ := auth.NewRegistry(nil)
 	s := &Server{
-		name:    Name,
-		desc:    "OpenTalon PR reviewer: compiles a Talon ruleset against extracted PR facts and returns an abstract action list. Holds all state; never touches GitHub.",
-		actions: map[string]action{},
-		auth:    empty,
-		floor:   taloonerpb.ProtocolFloor,
-		subs:    map[string]subscription{},
+		name:      Name,
+		desc:      "OpenTalon PR reviewer: compiles a Talon ruleset against extracted PR facts and returns an abstract action list. Holds all state; never touches GitHub.",
+		actions:   map[string]action{},
+		auth:      empty,
+		floor:     taloonerpb.ProtocolFloor,
+		subs:      map[string]subscription{},
+		decisions: map[string]Decision{},
 	}
 	registerActions(s)
 	return s
