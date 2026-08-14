@@ -46,8 +46,15 @@ func (s *Server) evaluatePR(req plugin.Request) plugin.Response {
 
 	// Full re-derivation. There is no persisted prior scope yet (talon-db
 	// persistence lands later), so the request is the complete fact set.
-	scope := facts.NewScope(facts.Key(repo, prNumber))
-	if err := scope.Assert(ctx, facts.Rederive(nil, set)); err != nil {
+	key := facts.Key(repo, prNumber)
+	state := facts.Rederive(nil, set)
+	// Subscription is a fact: surface it so `attr "pr.subscribed"` is readable
+	// in rules. The plugin owns it (set via set_subscription), so it is injected
+	// here rather than taken from the bot's request.
+	state["pr.subscribed"] = s.subscribedFor(key)
+
+	scope := facts.NewScope(key)
+	if err := scope.Assert(ctx, state); err != nil {
 		return errorResponse(req, fmt.Errorf("talooner: assert facts: %w", err))
 	}
 

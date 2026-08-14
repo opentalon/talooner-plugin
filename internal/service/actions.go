@@ -38,7 +38,7 @@ func registerActions(s *Server) {
 			{Name: "repo", Description: "Owner/name of the repository", Type: "string", Required: true},
 			{Name: "pr", Description: "Pull request number", Type: "string", Required: true},
 		},
-	}, notImplemented("P-B8"))
+	}, s.isSubscribed)
 
 	s.register(plugin.ActionMsg{
 		Name:        "set_subscription",
@@ -49,7 +49,7 @@ func registerActions(s *Server) {
 			{Name: "pr", Description: "Pull request number", Type: "string", Required: true},
 			{Name: "state", Description: "Desired subscription state (bool)", Type: "string", Required: true},
 		},
-	}, notImplemented("P-B8"))
+	}, s.setSubscription)
 
 	s.register(plugin.ActionMsg{
 		Name:        "assert_facts",
