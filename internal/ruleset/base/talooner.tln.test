@@ -1,0 +1,60 @@
+// Test suite for the Talooner strict base ruleset (talooner.tln).
+//
+// This file is also the tenant-facing example: a repo that copies talooner.tln
+// and this .tln.test gets a policy with its safety rules already under test.
+//
+// Run:
+//   talon test talooner.tln talooner.tln.test
+//
+// Synthetic PR facts only — no GitHub, no cluster, no bot. Each `strict` rule
+// is checked for both the case it must fire and a neighbouring case it must
+// not, because a safety rule that never fires fails silently.
+
+// ─── Unresolved conflicts ─────────────────────────────────────────────────────
+
+test "A PR with unresolved conflicts is blocked" {
+  given {
+    record 1 type "pr"
+    attr 1 "pr.number" 1
+    attr 1 "pr.mergeable" false
+
+    // Mergeable PR — this rule must leave it alone.
+    record 2 type "pr"
+    attr 2 "pr.number" 2
+    attr 2 "pr.mergeable" true
+  }
+
+  when rule "Never approve a PR with unresolved conflicts"
+
+  expect {
+    flagged 1
+    not flagged 2
+    did 1 block "pr.merge"
+    did 1 comment "pr" contains "unresolved conflicts"
+    did_not 2 block "pr.merge"
+  }
+}
+
+// ─── Required checks still running ────────────────────────────────────────────
+
+test "A PR whose required checks are still running is blocked" {
+  given {
+    record 1 type "pr"
+    attr 1 "pr.number" 3
+    attr 1 "pr.checks_pending" true
+
+    // Checks settled — this rule must leave it alone.
+    record 2 type "pr"
+    attr 2 "pr.number" 4
+    attr 2 "pr.checks_pending" false
+  }
+
+  when rule "Never approve while required checks are still running"
+
+  expect {
+    flagged 1
+    not flagged 2
+    did 1 block "pr.merge"
+    did_not 2 block "pr.merge"
+  }
+}
