@@ -11,6 +11,7 @@ package service
 
 import (
 	"fmt"
+	"sync"
 
 	"github.com/opentalon/opentalon/pkg/plugin"
 
@@ -42,6 +43,19 @@ type Server struct {
 
 	auth  *auth.Registry // key→tenant; nil-safe via the empty registry set in New
 	floor uint32         // lowest caller protocol_version served
+
+	// subscription state, one entry per PR scope key. Subscription is a fact
+	// (facts.md), persisted here for the plugin process's lifetime; talon-db
+	// backs it in a cluster. Guarded by subMu for concurrent action calls.
+	subMu sync.Mutex
+	subs  map[string]subscription
+}
+
+// subscription is a PR's subscription state and the unix time (seconds) the
+// current state was established.
+type subscription struct {
+	subscribed bool
+	since      int64
 }
 
 // New builds the registry with every Talooner action registered. Until
@@ -55,6 +69,7 @@ func New() *Server {
 		actions: map[string]action{},
 		auth:    empty,
 		floor:   taloonerpb.ProtocolFloor,
+		subs:    map[string]subscription{},
 	}
 	registerActions(s)
 	return s

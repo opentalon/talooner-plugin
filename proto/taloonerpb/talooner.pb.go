@@ -944,6 +944,106 @@ func (x *Quota) GetLlmCallsLimit() int64 {
 	return 0
 }
 
+// IsSubscribedResponse answers is_subscribed. subscribed is false for a PR that
+// was never seen — not an error. since is the unix time (seconds) the current
+// state was established, 0 when never set.
+type IsSubscribedResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Subscribed    bool                   `protobuf:"varint,1,opt,name=subscribed,proto3" json:"subscribed,omitempty"`
+	Since         int64                  `protobuf:"varint,2,opt,name=since,proto3" json:"since,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *IsSubscribedResponse) Reset() {
+	*x = IsSubscribedResponse{}
+	mi := &file_talooner_v1_talooner_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *IsSubscribedResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*IsSubscribedResponse) ProtoMessage() {}
+
+func (x *IsSubscribedResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_talooner_v1_talooner_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use IsSubscribedResponse.ProtoReflect.Descriptor instead.
+func (*IsSubscribedResponse) Descriptor() ([]byte, []int) {
+	return file_talooner_v1_talooner_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *IsSubscribedResponse) GetSubscribed() bool {
+	if x != nil {
+		return x.Subscribed
+	}
+	return false
+}
+
+func (x *IsSubscribedResponse) GetSince() int64 {
+	if x != nil {
+		return x.Since
+	}
+	return 0
+}
+
+// SetSubscriptionResponse answers set_subscription with the resulting state.
+type SetSubscriptionResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Subscribed    bool                   `protobuf:"varint,1,opt,name=subscribed,proto3" json:"subscribed,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SetSubscriptionResponse) Reset() {
+	*x = SetSubscriptionResponse{}
+	mi := &file_talooner_v1_talooner_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SetSubscriptionResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SetSubscriptionResponse) ProtoMessage() {}
+
+func (x *SetSubscriptionResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_talooner_v1_talooner_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SetSubscriptionResponse.ProtoReflect.Descriptor instead.
+func (*SetSubscriptionResponse) Descriptor() ([]byte, []int) {
+	return file_talooner_v1_talooner_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *SetSubscriptionResponse) GetSubscribed() bool {
+	if x != nil {
+		return x.Subscribed
+	}
+	return false
+}
+
 var File_talooner_v1_talooner_proto protoreflect.FileDescriptor
 
 const file_talooner_v1_talooner_proto_rawDesc = "" +
@@ -1002,7 +1102,16 @@ const file_talooner_v1_talooner_proto_rawDesc = "" +
 	"\x05quota\x18\x05 \x01(\v2\x12.talooner.v1.QuotaR\x05quota\"U\n" +
 	"\x05Quota\x12$\n" +
 	"\x0ellm_calls_used\x18\x01 \x01(\x03R\fllmCallsUsed\x12&\n" +
-	"\x0fllm_calls_limit\x18\x02 \x01(\x03R\rllmCallsLimit*`\n" +
+	"\x0fllm_calls_limit\x18\x02 \x01(\x03R\rllmCallsLimit\"L\n" +
+	"\x14IsSubscribedResponse\x12\x1e\n" +
+	"\n" +
+	"subscribed\x18\x01 \x01(\bR\n" +
+	"subscribed\x12\x14\n" +
+	"\x05since\x18\x02 \x01(\x03R\x05since\"9\n" +
+	"\x17SetSubscriptionResponse\x12\x1e\n" +
+	"\n" +
+	"subscribed\x18\x01 \x01(\bR\n" +
+	"subscribed*`\n" +
 	"\fEvaluateMode\x12\x1d\n" +
 	"\x19EVALUATE_MODE_UNSPECIFIED\x10\x00\x12\x19\n" +
 	"\x15EVALUATE_MODE_EXECUTE\x10\x01\x12\x16\n" +
@@ -1036,7 +1145,7 @@ func file_talooner_v1_talooner_proto_rawDescGZIP() []byte {
 }
 
 var file_talooner_v1_talooner_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
-var file_talooner_v1_talooner_proto_msgTypes = make([]protoimpl.MessageInfo, 11)
+var file_talooner_v1_talooner_proto_msgTypes = make([]protoimpl.MessageInfo, 13)
 var file_talooner_v1_talooner_proto_goTypes = []any{
 	(EvaluateMode)(0),               // 0: talooner.v1.EvaluateMode
 	(Verb)(0),                       // 1: talooner.v1.Verb
@@ -1052,6 +1161,8 @@ var file_talooner_v1_talooner_proto_goTypes = []any{
 	(*ValidateRulesetResponse)(nil), // 11: talooner.v1.ValidateRulesetResponse
 	(*WhoamiResponse)(nil),          // 12: talooner.v1.WhoamiResponse
 	(*Quota)(nil),                   // 13: talooner.v1.Quota
+	(*IsSubscribedResponse)(nil),    // 14: talooner.v1.IsSubscribedResponse
+	(*SetSubscriptionResponse)(nil), // 15: talooner.v1.SetSubscriptionResponse
 }
 var file_talooner_v1_talooner_proto_depIdxs = []int32{
 	1,  // 0: talooner.v1.Action.verb:type_name -> talooner.v1.Verb
@@ -1082,7 +1193,7 @@ func file_talooner_v1_talooner_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_talooner_v1_talooner_proto_rawDesc), len(file_talooner_v1_talooner_proto_rawDesc)),
 			NumEnums:      3,
-			NumMessages:   11,
+			NumMessages:   13,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

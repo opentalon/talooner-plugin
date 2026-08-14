@@ -141,3 +141,16 @@ message Quota {
   int64 llm_calls_used = 1;
   int64 llm_calls_limit = 2;
 }
+
+// IsSubscribedResponse answers is_subscribed. subscribed is false for a PR that
+// was never seen — not an error. since is the unix time (seconds) the current
+// state was established, 0 when never set.
+message IsSubscribedResponse {
+  bool subscribed = 1;
+  int64 since = 2;
+}
+
+// SetSubscriptionResponse answers set_subscription with the resulting state.
+message SetSubscriptionResponse {
+  bool subscribed = 1;
+}
