@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"time"
 
 	"github.com/opentalon/opentalon/pkg/plugin"
 	"github.com/opentalon/talon-language/pkg/talon"
@@ -58,19 +59,69 @@ func (s *Server) evaluatePR(req plugin.Request) plugin.Response {
 		return errorResponse(req, fmt.Errorf("talooner: assert facts: %w", err))
 	}
 
-	result, err := ruleset.Evaluate(ctx, req.Args["ruleset"], scope.Store())
+	tenantRuleset := req.Args["ruleset"]
+	result, err := ruleset.Evaluate(ctx, tenantRuleset, scope.Store())
 	if err != nil {
 		return errorResponse(req, fmt.Errorf("talooner: evaluate ruleset: %w", err))
 	}
 
 	actions, warnings := mapActions(result.Actions)
+	fired := firedRuleNames(result.Actions)
+	notFired := subtract(ruleset.RuleNames(tenantRuleset), fired)
+	explain := buildExplain(fired)
+
+	// Persist the decision BEFORE the response leaves. The caller is a workflow
+	// run that can be cancelled mid-flight, so if the record were written after
+	// the response, the most common failure mode would be the one with no audit
+	// trail.
+	s.persistDecision(Decision{
+		Repo:        repo,
+		PR:          prNumber,
+		HeadSHA:     req.Args["head_sha"],
+		RulesetHash: ruleset.Hash(tenantRuleset),
+		Facts:       state,
+		Fired:       fired,
+		NotFired:    notFired,
+		Actions:     actions,
+		Explain:     explain,
+		At:          time.Now().Unix(),
+	})
+
 	resp := &taloonerpb.EvaluatePrResponse{
 		Actions:  actions,
-		Explain:  buildExplain(result.Actions),
+		Explain:  explain,
 		Warnings: warnings,
 	}
 	summary := fmt.Sprintf("%s#%d: %d action(s), %d warning(s)", repo, prNumber, len(actions), len(warnings))
 	return structuredResponse(req, resp, summary)
+}
+
+// firedRuleNames returns the distinct rule names that fired, in first-seen order.
+func firedRuleNames(fired []talon.Action) []string {
+	seen := map[string]bool{}
+	var names []string
+	for _, a := range fired {
+		if !seen[a.Rule] {
+			seen[a.Rule] = true
+			names = append(names, a.Rule)
+		}
+	}
+	return names
+}
+
+// subtract returns the elements of all not present in remove.
+func subtract(all, remove []string) []string {
+	drop := make(map[string]bool, len(remove))
+	for _, r := range remove {
+		drop[r] = true
+	}
+	var out []string
+	for _, a := range all {
+		if !drop[a] {
+			out = append(out, a)
+		}
+	}
+	return out
 }
 
 // mapActions converts fired engine actions to the contract's action list. A verb
@@ -126,31 +177,21 @@ func argAt(args []any, i int) string {
 	return fmt.Sprint(args[i])
 }
 
-// buildExplain summarises the decision. A ruleset that compiled and evaluated
-// but fired nothing yields an explanation that says so — never an empty
-// response that reads as "not evaluated".
-func buildExplain(fired []talon.Action) *taloonerpb.Explain {
-	rules := make([]string, 0)
-	seen := map[string]bool{}
-	for _, a := range fired {
-		if !seen[a.Rule] {
-			seen[a.Rule] = true
-			rules = append(rules, a.Rule)
-		}
-	}
-
-	if len(rules) == 0 {
+// buildExplain summarises the decision from the fired rule names. A ruleset
+// that compiled and evaluated but fired nothing yields an explanation that says
+// so — never an empty response that reads as "not evaluated".
+func buildExplain(fired []string) *taloonerpb.Explain {
+	if len(fired) == 0 {
 		return &taloonerpb.Explain{
 			Summary: "no rules fired: the ruleset compiled and evaluated, but no rule matched the facts",
 		}
 	}
-
-	firings := make([]*taloonerpb.RuleFiring, 0, len(rules))
-	for _, r := range rules {
+	firings := make([]*taloonerpb.RuleFiring, 0, len(fired))
+	for _, r := range fired {
 		firings = append(firings, &taloonerpb.RuleFiring{Rule: r})
 	}
 	return &taloonerpb.Explain{
-		Summary: fmt.Sprintf("%d rule(s) fired", len(rules)),
+		Summary: fmt.Sprintf("%d rule(s) fired", len(fired)),
 		Firings: firings,
 	}
 }
