@@ -16,6 +16,7 @@ import (
 	"github.com/opentalon/opentalon/pkg/plugin"
 
 	"github.com/opentalon/talooner-plugin/internal/auth"
+	"github.com/opentalon/talooner-plugin/internal/facts"
 	"github.com/opentalon/talooner-plugin/proto/taloonerpb"
 )
 
@@ -54,6 +55,12 @@ type Server struct {
 	// each evaluate_pr response leaves; queried by explain_pr.
 	decMu     sync.Mutex
 	decisions map[string]Decision
+
+	// custom tenant-CI facts (preview.*, …) asserted via assert_facts, per PR
+	// scope key. Store-only: they are merged into the scope at the next
+	// evaluate_pr, where they reach a verdict (decision 20).
+	factMu      sync.Mutex
+	tenantFacts map[string]facts.Set
 }
 
 // subscription is a PR's subscription state and the unix time (seconds) the
@@ -69,13 +76,14 @@ type subscription struct {
 func New() *Server {
 	empty, _ := auth.NewRegistry(nil)
 	s := &Server{
-		name:      Name,
-		desc:      "OpenTalon PR reviewer: compiles a Talon ruleset against extracted PR facts and returns an abstract action list. Holds all state; never touches GitHub.",
-		actions:   map[string]action{},
-		auth:      empty,
-		floor:     taloonerpb.ProtocolFloor,
-		subs:      map[string]subscription{},
-		decisions: map[string]Decision{},
+		name:        Name,
+		desc:        "OpenTalon PR reviewer: compiles a Talon ruleset against extracted PR facts and returns an abstract action list. Holds all state; never touches GitHub.",
+		actions:     map[string]action{},
+		auth:        empty,
+		floor:       taloonerpb.ProtocolFloor,
+		subs:        map[string]subscription{},
+		decisions:   map[string]Decision{},
+		tenantFacts: map[string]facts.Set{},
 	}
 	registerActions(s)
 	return s

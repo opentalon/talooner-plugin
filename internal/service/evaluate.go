@@ -51,10 +51,12 @@ func (s *Server) evaluatePR(req plugin.Request) plugin.Response {
 
 	ctx := context.Background()
 
-	// Full re-derivation. There is no persisted prior scope yet (talon-db
-	// persistence lands later), so the request is the complete fact set.
+	// Full re-derivation over the durable prior: custom tenant-CI facts asserted
+	// via assert_facts survive (they are not bot-owned), and the request's bot
+	// facts replace the previous ones. This is how an out-of-band assert_facts
+	// reaches a verdict at the next evaluate_pr.
 	key := facts.Key(repo, prNumber)
-	state := facts.Rederive(nil, set)
+	state := facts.Rederive(s.tenantFactsFor(key), set)
 	// Subscription is a fact: surface it so `attr "pr.subscribed"` is readable
 	// in rules. The plugin owns it (set via set_subscription), so it is injected
 	// here rather than taken from the bot's request.

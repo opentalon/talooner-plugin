@@ -60,7 +60,7 @@ func registerActions(s *Server) {
 			{Name: "pr", Description: "Pull request number", Type: "string", Required: true},
 			{Name: "facts", Description: "Facts to assert, JSON-encoded", Type: "string", Required: true},
 		},
-	}, notImplemented("P-C4"))
+	}, s.assertFacts)
 
 	s.register(plugin.ActionMsg{
 		Name:        "validate_ruleset",

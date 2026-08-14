@@ -192,3 +192,19 @@ message IsSubscribedResponse {
 message SetSubscriptionResponse {
   bool subscribed = 1;
 }
+
+// AssertFactsResponse answers assert_facts. Store-only in v1 (decision 20): it
+// reports which attributes were accepted and stored and which were rejected,
+// and carries NO action list — the caller is a workflow run that exited long
+// before this, and the plugin holds no GitHub credential, so a woken rule has
+// nobody to act on. Accepted facts enter a verdict at the next evaluate_pr.
+message AssertFactsResponse {
+  repeated string accepted = 1;
+  repeated RejectedFact rejected = 2;
+}
+
+// RejectedFact is one attribute assert_facts refused, with why.
+message RejectedFact {
+  string attribute = 1;
+  string reason = 2;
+}
