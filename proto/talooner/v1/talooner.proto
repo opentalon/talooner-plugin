@@ -29,15 +29,48 @@ enum EvaluateMode {
 // Verb is the abstract action vocabulary (engine.md, "Abstract action
 // vocabulary"). The plugin returns verbs as data; the bot translates them to
 // GitHub. The set is closed — validate_ruleset rejects any verb outside it.
+//
+// Retraction. Each evaluate_pr returns the COMPLETE current action set (full
+// re-derivation, never a delta), so an action that fired before and is absent
+// now has been retracted: its rule no longer matches the facts. The bot diffs
+// the new set against what it previously executed and undoes the difference.
+// The per-verb comments below say what that undo means; the plugin owns the
+// full-state guarantee, the bot owns the GitHub effect.
 enum Verb {
   VERB_UNSPECIFIED = 0;
-  VERB_APPROVE = 1;  // target "pr"; fires only when no strict rule defeated it
-  VERB_BLOCK = 2;    // target "pr.merge"
-  VERB_COMMENT = 3;  // target + text; interpolation already resolved
-  VERB_ASSIGN = 4;   // target + assignee (resolved user/team)
-  VERB_REQUIRE = 5;  // target "review.<target>"
-  VERB_NOTIFY = 6;   // target + text; dispatched through an OpenTalon channel
-  VERB_EMIT = 7;     // name; asserts event.<name>=true in scope, no external effect
+
+  // approve target "pr". Fires only when no strict rule defeated it.
+  // Retraction: the prior approval is withdrawn — the bot dismisses its review.
+  VERB_APPROVE = 1;
+
+  // block target "pr.merge".
+  // Retraction: the block is lifted — Talooner no longer blocks the merge.
+  VERB_BLOCK = 2;
+
+  // comment target + text; {attr.x} interpolation already resolved.
+  // Retraction: the bot keys its comment so re-posting is idempotent and an
+  // absent comment can be resolved/hidden.
+  VERB_COMMENT = 3;
+
+  // assign target + assignee (an attr like "user.owner" arrives resolved to a
+  // value, not the literal string).
+  // Retraction: the assignment the bot made is removed.
+  VERB_ASSIGN = 4;
+
+  // require "review.<target>".
+  // Retraction: the review requirement the bot added is dropped.
+  VERB_REQUIRE = 5;
+
+  // notify target + text; the bot dispatches through an OpenTalon channel.
+  // Deferred bot-side to v1.5 (needs a configured channel), but the plugin
+  // returns it and validate_ruleset accepts it. One-shot: a sent notification
+  // cannot be unsent, so there is nothing to retract.
+  VERB_NOTIFY = 6;
+
+  // emit name; asserts event.<name>=true in the scope, no external effect.
+  // Retraction: the event fact is re-derived each run like any bot fact, so
+  // there is nothing external to undo.
+  VERB_EMIT = 7;
 }
 
 // Severity classifies a diagnostic or warning.
@@ -51,6 +84,11 @@ enum Severity {
 // Action is one abstract action the engine decided should fire, with its
 // arguments already resolved against the matched facts. Which scalar fields are
 // set depends on the verb (see Verb).
+//
+// Interpolation is resolved before the action leaves the plugin: a text like
+// "…{attr.user.owner}…" arrives filled in. One wrinkle: {item.<field>} resolves
+// only for {item.name}; {item.id} renders literally, so templates use {id} or
+// {attr.x}.
 message Action {
   Verb verb = 1;
   string target = 2;   // approve/block/comment/assign/require target
