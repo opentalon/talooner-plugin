@@ -111,6 +111,7 @@ func (s *Server) evaluatePR(req plugin.Request) plugin.Response {
 	// run that can be cancelled mid-flight, so if the record were written after
 	// the response, the most common failure mode would be the one with no audit
 	// trail.
+	s.touchScope(key) // an execute-mode evaluation keeps the scope's facts alive
 	s.persistDecision(Decision{
 		Repo:        repo,
 		PR:          prNumber,

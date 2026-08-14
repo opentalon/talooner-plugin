@@ -12,6 +12,7 @@ package service
 import (
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/opentalon/opentalon/pkg/plugin"
 
@@ -58,9 +59,12 @@ type Server struct {
 
 	// custom tenant-CI facts (preview.*, …) asserted via assert_facts, per PR
 	// scope key. Store-only: they are merged into the scope at the next
-	// evaluate_pr, where they reach a verdict (decision 20).
-	factMu      sync.Mutex
-	tenantFacts map[string]facts.Set
+	// evaluate_pr, where they reach a verdict (decision 20). lastActivity tracks
+	// the retention clock per scope; both are guarded by factMu.
+	factMu        sync.Mutex
+	tenantFacts   map[string]facts.Set
+	lastActivity  map[string]int64
+	factRetention time.Duration
 }
 
 // subscription is a PR's subscription state and the unix time (seconds) the
@@ -76,14 +80,16 @@ type subscription struct {
 func New() *Server {
 	empty, _ := auth.NewRegistry(nil)
 	s := &Server{
-		name:        Name,
-		desc:        "OpenTalon PR reviewer: compiles a Talon ruleset against extracted PR facts and returns an abstract action list. Holds all state; never touches GitHub.",
-		actions:     map[string]action{},
-		auth:        empty,
-		floor:       taloonerpb.ProtocolFloor,
-		subs:        map[string]subscription{},
-		decisions:   map[string]Decision{},
-		tenantFacts: map[string]facts.Set{},
+		name:          Name,
+		desc:          "OpenTalon PR reviewer: compiles a Talon ruleset against extracted PR facts and returns an abstract action list. Holds all state; never touches GitHub.",
+		actions:       map[string]action{},
+		auth:          empty,
+		floor:         taloonerpb.ProtocolFloor,
+		subs:          map[string]subscription{},
+		decisions:     map[string]Decision{},
+		tenantFacts:   map[string]facts.Set{},
+		lastActivity:  map[string]int64{},
+		factRetention: defaultFactRetention,
 	}
 	registerActions(s)
 	return s
