@@ -33,6 +33,11 @@ const (
 	// load the strict base. Kept as one source of truth for docs and for the
 	// verb/import enforcement in validate_ruleset (P-B4).
 	BaseImport = `import "` + BaseFileName + `"`
+
+	// TenantFile is the stable label the tenant ruleset compiles under. It is
+	// what diagnostics report as their file, so positions are meaningful to the
+	// tenant and the compile temp directory never leaks into a response.
+	TenantFile = "ruleset.tln"
 )
 
 // Severity classifies a diagnostic.
@@ -93,13 +98,51 @@ func Load(tenantSource string) (*Compiled, []Diagnostic, error) {
 	// only resolves imports relative to the filename's directory. Placing the
 	// virtual tenant file in dir makes `import "talooner.tln"` resolve to the
 	// base we just wrote.
-	tenantPath := filepath.Join(dir, "ruleset.tln")
+	tenantPath := filepath.Join(dir, TenantFile)
 	if cerr := talon.Check(tenantSource, talon.WithFilename(tenantPath)); cerr != nil {
-		return nil, diagnosticsFrom(cerr), cerr
+		return nil, relabel(diagnosticsFrom(cerr), tenantPath), cerr
 	}
 
 	diags := diagnosticsFrom(nil) // none on success today; kept for symmetry
 	return &Compiled{Hash: hashRuleset(strictBase, tenantSource), Diagnostics: diags}, diags, nil
+}
+
+// relabel rewrites the tenant temp path in diagnostics to the stable
+// TenantFile label, so a compile temp directory never reaches a response.
+// Imported-file diagnostics already carry the base's basename and are left as
+// they are.
+func relabel(diags []Diagnostic, tenantPath string) []Diagnostic {
+	for i := range diags {
+		if diags[i].File == tenantPath {
+			diags[i].File = TenantFile
+		}
+	}
+	return diags
+}
+
+// Validate reports whether a tenant ruleset is valid and returns every
+// diagnostic — verb-vocabulary violations plus compile errors, each with a
+// source position. A ruleset is valid only if it compiles (with the strict base
+// imported) and every `do` verb is in AllowedVerbs. This backs the
+// validate_ruleset action and `talooner rules validate`.
+func Validate(tenantSource string) (valid bool, diags []Diagnostic) {
+	diags = append(diags, CheckVerbs(tenantSource)...)
+
+	// Load surfaces parse/compile/import errors (already relabelled to
+	// TenantFile). The compiled result is discarded — validation only cares
+	// about the diagnostics.
+	if _, compileDiags, err := Load(tenantSource); err != nil {
+		diags = append(diags, compileDiags...)
+	}
+
+	valid = true
+	for _, d := range diags {
+		if d.Severity == SeverityError {
+			valid = false
+			break
+		}
+	}
+	return valid, diags
 }
 
 func hashRuleset(base, tenant string) string {
