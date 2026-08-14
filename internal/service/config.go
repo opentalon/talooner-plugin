@@ -24,6 +24,9 @@ type Config struct {
 	// activity. 0 means the 90-day default; values below the decision-20 floor
 	// (3 days) are raised to it. Decisions are never swept.
 	FactRetentionDays int `json:"fact_retention_days,omitempty"`
+
+	// RateLimitPerMinute caps requests per API key. 0 means the default (60).
+	RateLimitPerMinute int `json:"rate_limit_per_minute,omitempty"`
 }
 
 // TenantConfig is one tenant's key and capabilities.
@@ -90,5 +93,6 @@ func (s *Server) Configure(configJSON string) error {
 	s.auth = reg
 	s.floor = floor
 	s.factRetention = retentionFromDays(cfg.FactRetentionDays)
+	s.limiter = newRateLimiter(cfg.RateLimitPerMinute)
 	return nil
 }

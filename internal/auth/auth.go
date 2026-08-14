@@ -78,6 +78,11 @@ func NewRegistry(tenants map[string]Tenant) (*Registry, error) {
 	return &Registry{byKey: byKey}, nil
 }
 
+// Configured reports whether any tenant is registered. A running plugin is
+// always configured (the host calls Configure, which rejects an empty config),
+// so this is false only for an as-yet-unconfigured Server.
+func (r *Registry) Configured() bool { return len(r.byKey) > 0 }
+
 // Authenticate resolves a presented key to its tenant. An empty key is
 // ErrMissingKey; an unknown key is ErrBadKey. On success it returns the tenant.
 func (r *Registry) Authenticate(key string) (Tenant, error) {

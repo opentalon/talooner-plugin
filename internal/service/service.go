@@ -11,6 +11,7 @@ package service
 
 import (
 	"fmt"
+	"log/slog"
 	"sync"
 	"time"
 
@@ -65,6 +66,11 @@ type Server struct {
 	tenantFacts   map[string]facts.Set
 	lastActivity  map[string]int64
 	factRetention time.Duration
+
+	// Per-API-key request rate limiter and the caller log. Enforced once the
+	// plugin is configured (the internet-facing gate; P-D3).
+	limiter *rateLimiter
+	logger  *slog.Logger
 }
 
 // subscription is a PR's subscription state and the unix time (seconds) the
@@ -90,6 +96,8 @@ func New() *Server {
 		tenantFacts:   map[string]facts.Set{},
 		lastActivity:  map[string]int64{},
 		factRetention: defaultFactRetention,
+		limiter:       newRateLimiter(defaultRateLimit),
+		logger:        slog.Default(),
 	}
 	registerActions(s)
 	return s
@@ -127,12 +135,43 @@ func (s *Server) Capabilities() plugin.CapabilitiesMsg {
 }
 
 // Execute routes an action call to its registered handler. Unknown actions are
-// a caller error, returned as such rather than as a transport failure. It
-// satisfies plugin.Handler.
+// a caller error, returned as such rather than as a transport failure.
+//
+// Once the plugin is configured it is the internet-facing gate: every action
+// authenticates the API key (fail closed), is rate-limited per key, and logs
+// the caller — so a tenant can answer "which repo burned my quota" without a
+// model in the loop. An unconfigured Server (tests/dev) skips the gate; whoami
+// keeps its own fail-closed auth regardless. It satisfies plugin.Handler.
 func (s *Server) Execute(req plugin.Request) plugin.Response {
 	a, ok := s.actions[req.Action]
 	if !ok {
 		return plugin.Response{CallID: req.ID, Error: fmt.Sprintf("talooner: unknown action %q", req.Action)}
 	}
+
+	if s.auth.Configured() {
+		key := req.Args[auth.ArgAPIKey]
+		tenant, err := s.auth.Authenticate(key)
+		if err != nil {
+			return errorResponse(req, err)
+		}
+		if !s.limiter.Allow(key) {
+			return errorResponse(req, fmt.Errorf("talooner: rate limit exceeded for this API key; slow down"))
+		}
+		s.logCaller(req, tenant)
+	}
+
 	return a.handler(req)
+}
+
+// logCaller records who made a call — tenant, action, repo, pr, and the
+// workflow run id — so quota spend is attributable to a repo without inspecting
+// any model output. The API key itself is never logged.
+func (s *Server) logCaller(req plugin.Request, tenant auth.Tenant) {
+	s.logger.Info("talooner action",
+		"action", req.Action,
+		"tenant", tenant.Name,
+		"repo", req.Args["repo"],
+		"pr", req.Args["pr"],
+		"workflow_run_id", req.Args["workflow_run_id"],
+	)
 }
