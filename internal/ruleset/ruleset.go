@@ -145,6 +145,30 @@ func relabel(diags []Diagnostic, tenantPath string) []Diagnostic {
 	return diags
 }
 
+// TestResult is one `test` block's outcome, aliased from pkg/tln so callers
+// of RunTests don't need to import it directly.
+type TestResult = tln.TestResult
+
+// RunTests compiles a tenant ruleset with the strict base imported and runs
+// testSource's `.tln.test` blocks against it, via pkg/tln.RunTests. A compile
+// failure in either source returns the diagnostics (relabelled to TenantFile
+// the same way Load does) and a non-nil error; a successful compile returns
+// one tln.TestResult per test block. This backs the run_ruleset_test action
+// and `talooner rules test`.
+func RunTests(tenantSource, testSource string) ([]tln.TestResult, []Diagnostic, error) {
+	tenantPath, cleanup, err := baseDir()
+	if err != nil {
+		return nil, nil, err
+	}
+	defer cleanup()
+
+	results, rerr := tln.RunTests(tenantSource, testSource, tln.WithFilename(tenantPath))
+	if rerr != nil {
+		return nil, relabel(diagnosticsFrom(rerr), tenantPath), rerr
+	}
+	return results, nil, nil
+}
+
 // Validate reports whether a tenant ruleset is valid and returns every
 // diagnostic — verb-vocabulary violations plus compile errors, each with a
 // source position. A ruleset is valid only if it compiles (with the strict base

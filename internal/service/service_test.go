@@ -33,6 +33,7 @@ func TestReadOnlyMatrix(t *testing.T) {
 		"set_subscription": false,
 		"assert_facts":     false,
 		"validate_ruleset": true,
+		"run_ruleset_test": true,
 		"explain_pr":       true,
 		"whoami":           true,
 	}
@@ -52,7 +53,7 @@ func TestReadOnlyMatrix(t *testing.T) {
 func TestActionSet(t *testing.T) {
 	want := []string{
 		"assert_facts", "evaluate_pr", "explain_pr", "is_subscribed",
-		"set_subscription", "validate_ruleset", "whoami",
+		"run_ruleset_test", "set_subscription", "validate_ruleset", "whoami",
 	}
 	var got []string
 	for _, a := range New().Capabilities().Actions {

@@ -6,7 +6,8 @@ import (
 
 // registerActions declares the full Talooner action surface (protocol.md,
 // "Actions to declare"). Every action is user_only. read_only marks the pure
-// queries — is_subscribed, validate_ruleset, explain_pr, whoami — so the host
+// queries — is_subscribed, validate_ruleset, run_ruleset_test, explain_pr,
+// whoami — so the host
 // skips its per-call confirmation gate; the rest mutate state.
 func registerActions(s *Server) {
 	s.register(plugin.ActionMsg{
@@ -67,6 +68,17 @@ func registerActions(s *Server) {
 			{Name: "ruleset", Description: "Ruleset text to validate", Type: "string", Required: true},
 		},
 	}, s.validateRuleset)
+
+	s.register(plugin.ActionMsg{
+		Name:        "run_ruleset_test",
+		Description: "Compile a ruleset and run a paired .tln.test source against it, returning pass/fail per test block. Powers `talooner rules test`.",
+		UserOnly:    true,
+		ReadOnly:    true,
+		Parameters: []plugin.ParameterMsg{
+			{Name: "ruleset", Description: "Ruleset text under test", Type: "string", Required: true},
+			{Name: "test_source", Description: ".tln.test source to run against the ruleset", Type: "string", Required: true},
+		},
+	}, s.runRulesetTest)
 
 	s.register(plugin.ActionMsg{
 		Name:        "explain_pr",

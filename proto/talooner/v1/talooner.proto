@@ -177,6 +177,29 @@ message ValidateRulesetResponse {
   repeated Diagnostic diagnostics = 2;
 }
 
+// RunRulesetTestRequest / RunRulesetTestResponse back run_ruleset_test.
+message RunRulesetTestRequest {
+  string ruleset = 1;
+  string test_source = 2;
+}
+
+// TestOutcome is one `test` block's result, mirroring pkg/tln.TestResult.
+message TestOutcome {
+  string name = 1;
+  bool passed = 2;
+  repeated string errors = 3;
+}
+
+message RunRulesetTestResponse {
+  repeated TestOutcome results = 1;
+
+  // diagnostics carries a compile failure in either ruleset or test_source —
+  // the same Diagnostic shape and toProtoDiagnostics conversion
+  // validate_ruleset uses, so a compile error looks identical from either
+  // action. Empty when results is populated.
+  repeated Diagnostic diagnostics = 2;
+}
+
 // WhoamiResponse is the capability handshake. protocol_version lets a caller
 // fail fast on version skew; models/features let it know whether llm_review is
 // available before loading a ruleset that depends on it.

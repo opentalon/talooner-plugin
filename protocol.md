@@ -53,6 +53,7 @@ and when a person invokes the action directly.
 | `set_subscription` | `repo`, `pr`, `state` | `{subscribed: bool}` |
 | `assert_facts` | `repo`, `pr`, `facts` (JSON) | `{accepted: [...], rejected: [...]}` — the custom-facts path, **store-only in v1** |
 | `validate_ruleset` | `ruleset` (text) | `{valid: bool, diagnostics: [...]}` — powers `talooner rules validate` |
+| `run_ruleset_test` | `ruleset` (text), `test_source` (text) | `{results: [{name, passed, errors}], diagnostics: [...]}` — powers `talooner rules test` |
 | `explain_pr` | `repo`, `pr`, `head_sha` | `{explain: {...}}` — powers `@talooner /why` |
 | `whoami` | — | `{tenant, quota, models, features, protocol_version}` |
 
@@ -111,8 +112,8 @@ repo. A model must never be able to reach into the decision path. The whole
 design premise is that rules decide and the model answers questions; `user_only`
 is what enforces that at the protocol level rather than by convention.
 
-`read_only: true` on `is_subscribed`, `validate_ruleset`, `explain_pr`, `whoami`.
-The rest mutate.
+`read_only: true` on `is_subscribed`, `validate_ruleset`, `run_ruleset_test`,
+`explain_pr`, `whoami`. The rest mutate.
 
 ## Payload size
 
