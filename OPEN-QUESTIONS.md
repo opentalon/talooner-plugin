@@ -192,7 +192,7 @@ document — without a lock or upstream batching. `concurrency:` in the tenant's
 workflow file remains the first line of defence; the 409 is what happens when
 they delete it.
 
-**B7. `run_ruleset_test` — designed, blocked on an upstream export.** `talooner`
+**B7. `run_ruleset_test` — built.** `talooner`
 issue #24 (`rules test`) needs a cluster action that runs a tenant's
 `rules.tln.test` file, the way `validate_ruleset` already runs `rules.tln`
 through the same compiler the CLI would otherwise duplicate. It cannot be built
@@ -212,17 +212,21 @@ proposing `pkg/tln.RunTests(rulesSource, testSource string, opts ...Option)
 ([]TestResult, error)`, mirroring `Check`/`Run`'s shape (`*CompileError` on
 failure, one `TestResult{Name, Passed, Errors, Duration}` per test block on
 success — the same fields `internal/testrunner.TestResult` already has, exported
-at the boundary this module can actually cross).
+at the boundary this module can actually cross). Landed as
+[`tln-language#201`](https://github.com/opentalon/tln-language/pull/201) →
+`master` at `7fd7e2f`; this module pins the pseudo-version carrying it
+(`v0.13.2-0.20260825112852-41c7e6cd11f1`, no tag past v0.13.1 exists yet).
 
-Once that lands, the shape here is small:
+Built:
 
 - Proto: `RunRulesetTestRequest{ruleset, test_source}` /
   `RunRulesetTestResponse{results: repeated TestOutcome{name, passed, errors},
   diagnostics}` — `diagnostics` reuses the same `Diagnostic` message and
   `toProtoDiagnostics` conversion `validate_ruleset` already has, so a compile
   failure looks identical whether it's hit via `rules validate` or `rules test`.
-- `internal/service/test.go` (new file, mirrors `validate.go`): compile
-  tenant+base the way `ruleset.Load` does, then call `pkg/tln.RunTests`.
-- New action `run_ruleset_test`, registered `user_only` like every other action.
-- `talooner rules test <path>` rounds-trips to it the same way `rules validate`
-  already does to `validate_ruleset` — no second compiler client-side.
+- `internal/ruleset.RunTests` (mirrors `Load`/`Evaluate`): compiles tenant+base
+  the way `Load` does, then calls `pkg/tln.RunTests`.
+- `internal/service/test.go` (mirrors `validate.go`): the `run_ruleset_test`
+  handler, registered `user_only` + `read_only` like `validate_ruleset`.
+- **Not yet built:** `talooner rules test <path>` round-tripping to it
+  client-side — that is `talooner` repo work, not this module's.

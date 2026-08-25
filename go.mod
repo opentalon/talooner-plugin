@@ -4,7 +4,7 @@ go 1.25.0
 
 require (
 	github.com/opentalon/opentalon v0.0.23
-	github.com/opentalon/tln-language v0.8.0
+	github.com/opentalon/tln-language v0.13.2-0.20260825112852-41c7e6cd11f1
 	google.golang.org/protobuf v1.36.11
 )
 

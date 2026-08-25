@@ -50,8 +50,9 @@ Reuse `tln-language`'s `.tln.test` framework via `pkg/tln` — not
 Go module, and internal-package visibility is scoped by import path prefix,
 not module boundary). `validate_ruleset` and `talooner rules test` are meant to
 be the same code path, so a tenant's CI and the plugin can never disagree about
-whether a ruleset is valid — see `run_ruleset_test` (OPEN-QUESTIONS.md, B7),
-not yet built, blocked on `tln-language#200`.
+whether a ruleset is valid — see `run_ruleset_test` (`internal/service/test.go`,
+`pkg/tln.RunTests` via `internal/ruleset.RunTests`), built on top of
+`tln-language#200`/#201.
 
 Assert on the actions a rule produced, not only on which rows it matched:
 
