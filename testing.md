@@ -45,10 +45,13 @@ The interesting cases are the ones that don't fire:
 
 ## Ruleset tests
 
-Reuse `tln-language`'s `.tln.test` framework and `internal/testrunner`
-directly. `validate_ruleset` and `talooner rules test` are the same code path —
-that's deliberate, so a tenant's CI and the plugin can never disagree about
-whether a ruleset is valid.
+Reuse `tln-language`'s `.tln.test` framework via `pkg/tln` — not
+`internal/testrunner` directly, which this module can never import (separate
+Go module, and internal-package visibility is scoped by import path prefix,
+not module boundary). `validate_ruleset` and `talooner rules test` are meant to
+be the same code path, so a tenant's CI and the plugin can never disagree about
+whether a ruleset is valid — see `run_ruleset_test` (OPEN-QUESTIONS.md, B7),
+not yet built, blocked on `tln-language#200`.
 
 Assert on the actions a rule produced, not only on which rows it matched:
 

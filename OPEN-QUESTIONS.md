@@ -191,3 +191,38 @@ closes the A7 read-modify-write race — no interleaved writers, so no mixed
 document — without a lock or upstream batching. `concurrency:` in the tenant's
 workflow file remains the first line of defence; the 409 is what happens when
 they delete it.
+
+**B7. `run_ruleset_test` — designed, blocked on an upstream export.** `talooner`
+issue #24 (`rules test`) needs a cluster action that runs a tenant's
+`rules.tln.test` file, the way `validate_ruleset` already runs `rules.tln`
+through the same compiler the CLI would otherwise duplicate. It cannot be built
+yet: `talooner-plugin` is a separate Go module from `tln-language`, and
+`internal/testrunner` is walled off by Go's internal-package visibility, which
+is scoped by import path prefix, not by module boundary — this module can never
+import it directly, regardless of what `testing.md`'s "reuse `internal/testrunner`
+directly" line implies. `cmd/tln test` only gets away with it because it lives
+inside the `tln-language` module (`cmd/tln/main.go:344`, `runTestPair`): lex+parse
+the rules file and the test file separately, merge the two ASTs (`did`/`did_not`
+assertions need the rule blocks the test file alone doesn't carry), compile,
+`testrunner.Run(merged, plans)`. `pkg/tln` — the public surface `ruleset.go`
+already builds on for `Check`/`Run` — has no equivalent today.
+
+Filed upstream: [`tln-language#200`](https://github.com/opentalon/tln-language/issues/200),
+proposing `pkg/tln.RunTests(rulesSource, testSource string, opts ...Option)
+([]TestResult, error)`, mirroring `Check`/`Run`'s shape (`*CompileError` on
+failure, one `TestResult{Name, Passed, Errors, Duration}` per test block on
+success — the same fields `internal/testrunner.TestResult` already has, exported
+at the boundary this module can actually cross).
+
+Once that lands, the shape here is small:
+
+- Proto: `RunRulesetTestRequest{ruleset, test_source}` /
+  `RunRulesetTestResponse{results: repeated TestOutcome{name, passed, errors},
+  diagnostics}` — `diagnostics` reuses the same `Diagnostic` message and
+  `toProtoDiagnostics` conversion `validate_ruleset` already has, so a compile
+  failure looks identical whether it's hit via `rules validate` or `rules test`.
+- `internal/service/test.go` (new file, mirrors `validate.go`): compile
+  tenant+base the way `ruleset.Load` does, then call `pkg/tln.RunTests`.
+- New action `run_ruleset_test`, registered `user_only` like every other action.
+- `talooner rules test <path>` rounds-trips to it the same way `rules validate`
+  already does to `validate_ruleset` — no second compiler client-side.
