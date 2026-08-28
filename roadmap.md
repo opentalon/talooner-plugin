@@ -102,7 +102,10 @@ repo, and the `opentalon/*` repos dogfood it.
 The only place a model enters, and it enters as a fact. Details in
 `llm-review.md`.
 
-- LLM call using cluster-configured tenant credentials
+- LLM call routed **through the OpenTalon host** (`_subprocess.run` over the
+  plugin callback channel), using the cluster's credentials — the plugin embeds
+  no provider SDK. Requires running under a host; standalone TCP mode withdraws
+  the feature and degrades a fired `llm_review` to `result: "error"`
 - Prompt in a `.txt` file, never a Go literal
 - Fixed output enum, result stored as a fact keyed by
   `(pr, head_sha, doc_url, prompt_version)`

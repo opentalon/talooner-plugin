@@ -28,7 +28,8 @@ rule "Block on a documented mismatch" {
 rule fires llm_review(doc_url, diff)
   → look up fact (pr, head_sha, doc_url, prompt_version)
       hit  → return it. No API call, no spend.       ← unless force=true
-      miss → call the model → store result as a fact → return it
+      miss → ask the OpenTalon host to run the model
+             → store result as a fact → return it
 ```
 
 **It is the one verb the plugin executes rather than returns**, and that is a
@@ -36,6 +37,31 @@ deliberate exception worth naming: every other verb crosses the wire because
 only the bot holds a GitHub token, while this one must not, because only the
 cluster holds provider credentials. The bot never sees it in the returned
 action list.
+
+### The call goes through the host, not a provider SDK
+
+The cluster holds the credentials, but they live in the **OpenTalon host**, not
+this plugin. So the plugin does not embed a provider SDK; it asks the host to do
+the call. Mechanically:
+
+- The plugin declares `SupportsCallbacks` and implements
+  `StreamingHandler.ExecuteWithCallbacks`, so the host dispatches `evaluate_pr`
+  over `ExecuteBidi` and hands it a live `HostCaller`.
+- When an `llm_review` fires, the plugin calls
+  `host.RunAction("_subprocess", "run", {task, tools: "", max_iterations: "1"})`
+  — a bounded, single-turn, tool-less sub-agent. The host runs it with the
+  tenant's cluster credentials and returns the answer inline.
+- Token spend is metered by the host (`opentalon_llm_*` per entity,
+  `opentalon_plugin_*` per plugin/action), so a review is attributable to the
+  calling repo/workflow without inspecting model output.
+
+Two consequences the plugin owns regardless: it constrains the answer to the
+fixed enum below, and it enforces the caps (a runaway sub-agent that ignored
+`max_iterations` still can't exceed the per-tenant ceiling here).
+
+**Standalone TCP mode has no host**, so no callback channel. There, `whoami`
+withdraws `llm_review` from the tenant's features and a fired `llm_review`
+degrades to `result: "error"` — it never reaches a model that isn't there.
 
 ### The second pass this implies
 

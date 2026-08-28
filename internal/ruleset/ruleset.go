@@ -176,6 +176,7 @@ func RunTests(tenantSource, testSource string) ([]tln.TestResult, []Diagnostic, 
 // validate_ruleset action and `talooner rules validate`.
 func Validate(tenantSource string) (valid bool, diags []Diagnostic) {
 	diags = append(diags, CheckVerbs(tenantSource)...)
+	diags = append(diags, LintLLMReview(tenantSource)...)
 
 	// Load surfaces parse/compile/import errors (already relabelled to
 	// TenantFile). The compiled result is discarded — validation only cares

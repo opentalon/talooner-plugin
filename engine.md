@@ -16,9 +16,12 @@ See `diagrams.md` §2b for the picture.
    work (`diagrams.md` §4). Details in `facts.md`.
 4. **Engine** — `tln-language`'s RETE-ish reactive engine.
 5. **`llm_review`** — invoked only when a rule fires it, and the one action this
-   plugin performs rather than returns. Its results land as facts, so the engine
-   runs a **second pass** when any fired; rules reading `llm_review.*` reach a
-   verdict there. Bounded at two passes. See `llm-review.md`.
+   plugin performs rather than returns. The plugin does not call a provider
+   directly: it asks the OpenTalon host to run a bounded sub-agent
+   (`host.RunAction("_subprocess", "run", …)`) using the cluster's credentials.
+   Its results land as facts, so the engine runs a **second pass** when any
+   fired; rules reading `llm_review.*` reach a verdict there. Bounded at two
+   passes. See `llm-review.md`.
 6. **Defeasible resolution** — `strict` > `overrides` > priority
    (`tln-language/docs/defeasible.md`). Not an ad-hoc "block wins" in Go.
 7. **`explain` / audit** — persisted before returning, so a decision is queryable

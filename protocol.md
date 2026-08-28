@@ -61,7 +61,12 @@ and when a person invokes the action directly.
 it to know whether `llm_review` is even available before loading a ruleset that
 depends on it — a ruleset using `llm_review` on a cluster without a configured
 provider gets a validation warning at load time, not a runtime failure on the
-first PR.
+first PR. `llm_review` is performed by asking the OpenTalon host to run a bounded
+sub-agent (`_subprocess.run`), so the plugin declares `SupportsCallbacks` and the
+host dispatches `evaluate_pr` over `ExecuteBidi` to hand it a callback channel.
+Running standalone (TCP mode) there is no host and no channel, so `whoami` omits
+`llm_review` from `features` and a fired `llm_review` degrades to
+`result: "error"` (`llm-review.md`).
 
 `protocol_version` is new, and decision 1 is why. The action version is pinned in
 each tenant's workflow file (`opentalon/talooner@v1`, or a sha); the plugin

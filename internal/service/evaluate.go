@@ -28,7 +28,7 @@ import (
 // are returned in the distinct `plan` field, never `actions`, and nothing is
 // persisted. The distinction lives in the payload shape, so a caller cannot
 // execute a plan by accident.
-func (s *Server) evaluatePR(req plugin.Request) plugin.Response {
+func (s *Server) evaluatePR(ctx context.Context, req plugin.Request, host plugin.HostCaller) plugin.Response {
 	mode := req.Args["mode"]
 	switch mode {
 	case "", "execute", "plan":
@@ -53,8 +53,6 @@ func (s *Server) evaluatePR(req plugin.Request) plugin.Response {
 	if err != nil {
 		return errorResponse(req, err)
 	}
-
-	ctx := context.Background()
 
 	// Full re-derivation over the durable prior: custom tenant-CI facts asserted
 	// via assert_facts survive (they are not bot-owned), and the request's bot
@@ -85,13 +83,62 @@ func (s *Server) evaluatePR(req plugin.Request) plugin.Response {
 	// applies the remaining strict > priority precedence to any standing
 	// approve/block conflict, dropping the defeated side's actions or warning on
 	// an unresolved tie (P-C1).
-	resolved, conflictWarnings := resolveConflicts(result.Actions, ruleset.RuleMeta(tenantRuleset))
+	meta := ruleset.RuleMeta(tenantRuleset)
+	resolved, conflictWarnings := resolveConflicts(result.Actions, meta)
 
-	actions, warnings := mapActions(resolved)
+	// llm_review is the one verb the plugin performs rather than returns, so it
+	// never reaches the returned action list — split it out here.
+	reviews, rest := splitLLMReviews(resolved)
+
+	var warnings []*taloonerpb.Warning
 	for _, w := range conflictWarnings {
 		warnings = append(warnings, &taloonerpb.Warning{Code: "unresolved_conflict", Message: w})
 	}
-	fired := firedRuleNames(resolved)
+
+	// The second pass. When any llm_review fired, execute it, assert its result
+	// as llm_review.* facts, and re-run the engine so rules reading those facts
+	// reach a verdict. Bounded at two passes — an llm_review fired on the second
+	// pass is not evaluated a third time (llm-review.md). Plan mode never spends:
+	// it reports that a review would fire and stops.
+	if len(reviews) > 0 {
+		if planMode {
+			warnings = append(warnings, &taloonerpb.Warning{
+				Code:    "llm_review_planned",
+				Message: fmt.Sprintf("%d llm_review action(s) would fire and call the model on execute", len(reviews)),
+			})
+		} else {
+			llmSet, llmWarnings := s.resolveLLMReviews(ctx, host, req, key, state, reviews)
+			warnings = append(warnings, llmWarnings...)
+
+			state = cloneSet(state)
+			for k, v := range llmSet {
+				state[k] = v
+			}
+			scope2 := facts.NewScope(key)
+			if err := scope2.Assert(ctx, state); err != nil {
+				return errorResponse(req, fmt.Errorf("talooner: assert llm_review facts: %w", err))
+			}
+			result2, evalErr := ruleset.Evaluate(ctx, tenantRuleset, scope2.Store())
+			if evalErr != nil {
+				return errorResponse(req, fmt.Errorf("talooner: evaluate ruleset (second pass): %w", evalErr))
+			}
+			resolved2, conflictWarnings2 := resolveConflicts(result2.Actions, meta)
+			// Bounded at two passes: a producer rule re-fires llm_review on the
+			// second pass (its condition still holds), but we do not call the model
+			// again — the result is already cached and asserted. Silently drop any
+			// second-pass llm_review; validate_ruleset warns at load time about the
+			// one shape that actually matters (a rule that both reads and fires).
+			_, rest2 := splitLLMReviews(resolved2)
+			for _, w := range conflictWarnings2 {
+				warnings = append(warnings, &taloonerpb.Warning{Code: "unresolved_conflict", Message: w})
+			}
+			rest = rest2
+		}
+	}
+
+	actions, mapWarnings := mapActions(rest)
+	warnings = append(warnings, mapWarnings...)
+	fired := firedRuleNames(rest)
 	explain := buildExplain(fired)
 
 	// Plan mode is a dry run: return the actions that would fire in the distinct
@@ -162,6 +209,20 @@ func subtract(all, remove []string) []string {
 	return out
 }
 
+// splitLLMReviews partitions resolved actions into the llm_review actions the
+// plugin performs itself and the rest it returns to the bot. llm_review is never
+// mapped into the returned action list (llm-review.md).
+func splitLLMReviews(actions []tln.Action) (reviews, rest []tln.Action) {
+	for _, a := range actions {
+		if a.Verb == ruleset.VerbLLMReview {
+			reviews = append(reviews, a)
+			continue
+		}
+		rest = append(rest, a)
+	}
+	return reviews, rest
+}
+
 // mapActions converts fired engine actions to the contract's action list. A verb
 // outside the vocabulary is dropped and surfaced as a warning rather than
 // reaching the bot as an action it cannot execute (engine.md).
@@ -169,6 +230,12 @@ func mapActions(fired []tln.Action) ([]*taloonerpb.Action, []*taloonerpb.Warning
 	var actions []*taloonerpb.Action
 	var warnings []*taloonerpb.Warning
 	for _, a := range fired {
+		// llm_review is performed by the plugin, not returned. It is split out
+		// before mapping; guard here so a stray one is skipped silently rather
+		// than mislabelled as an unknown verb.
+		if a.Verb == ruleset.VerbLLMReview {
+			continue
+		}
 		pa, ok := toProtoAction(a)
 		if !ok {
 			warnings = append(warnings, &taloonerpb.Warning{
