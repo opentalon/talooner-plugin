@@ -10,6 +10,30 @@ import (
 	"github.com/opentalon/talooner-plugin/proto/taloonerpb"
 )
 
+// featureLLMReview is the whoami feature name a caller checks before loading a
+// ruleset that uses llm_review, so config and handshake read the same
+// (auth.Tenant.HasFeature).
+const featureLLMReview = "llm_review"
+
+// availableFeatures is the tenant's configured features minus any the running
+// deployment can't honour. In standalone mode (TCP, no host) there is no
+// callback channel to perform the model call, so llm_review is withdrawn — the
+// caller warns at ruleset-load time instead of failing on the first PR
+// (llm-review.md).
+func (s *Server) availableFeatures(tenant auth.Tenant) []string {
+	if !s.standalone {
+		return tenant.Features
+	}
+	out := make([]string, 0, len(tenant.Features))
+	for _, f := range tenant.Features {
+		if f == featureLLMReview {
+			continue
+		}
+		out = append(out, f)
+	}
+	return out
+}
+
 // ArgProtocolVersion is the optional arg by which a caller declares its
 // protocol version so the plugin can reject a below-floor caller at the
 // handshake instead of misbehaving mid-evaluation.
@@ -43,17 +67,20 @@ func (s *Server) whoami(req plugin.Request) plugin.Response {
 		}
 	}
 
+	features := s.availableFeatures(tenant)
 	resp := &taloonerpb.WhoamiResponse{
 		Tenant:          tenant.Name,
 		ProtocolVersion: taloonerpb.ProtocolVersion,
 		Models:          tenant.Models,
-		Features:        tenant.Features,
+		Features:        features,
 		Quota: &taloonerpb.Quota{
-			LlmCallsUsed:  tenant.Quota.CallsUsed,
+			// Live counter, seeded from config and decremented as calls are made,
+			// so the caller sees remaining budget rather than the startup value.
+			LlmCallsUsed:  s.LLMCallsUsed(tenant),
 			LlmCallsLimit: tenant.Quota.CallsLimit,
 		},
 	}
 	summary := fmt.Sprintf("tenant=%s protocol_version=%d models=%d features=%v",
-		tenant.Name, taloonerpb.ProtocolVersion, len(tenant.Models), tenant.Features)
+		tenant.Name, taloonerpb.ProtocolVersion, len(tenant.Models), features)
 	return structuredResponse(req, resp, summary)
 }

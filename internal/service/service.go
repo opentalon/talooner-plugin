@@ -10,6 +10,7 @@
 package service
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"sync"
@@ -19,6 +20,7 @@ import (
 
 	"github.com/opentalon/talooner-plugin/internal/auth"
 	"github.com/opentalon/talooner-plugin/internal/facts"
+	"github.com/opentalon/talooner-plugin/internal/llm"
 	"github.com/opentalon/talooner-plugin/proto/taloonerpb"
 )
 
@@ -46,6 +48,23 @@ type Server struct {
 
 	auth  *auth.Registry // key→tenant; nil-safe via the empty registry set in New
 	floor uint32         // lowest caller protocol_version served
+
+	// standalone is true when the plugin runs without an OpenTalon host (TCP
+	// mode, main.go). llm_review needs the host callback channel, so in this
+	// mode the feature is withdrawn from whoami and a fired llm_review degrades
+	// to result="error" rather than reaching a model that isn't there.
+	standalone bool
+
+	// llmQuota is the live per-tenant llm_review call counter, keyed by tenant
+	// name, seeded from config once and decremented as calls are made. Config's
+	// CallsUsed is a starting point; this is the running total. Guarded by
+	// llmMu, which also guards llmCache.
+	llmMu    sync.Mutex
+	llmQuota map[string]int64
+	// llmCache is the fact-store-is-the-cache: llm_review verdicts keyed by
+	// (scope, head_sha, code unit, prompt_version). A hit costs no call and no
+	// spend; tln-db backs this in a cluster (llm-review.md, decision 9).
+	llmCache map[string]llm.Result
 
 	// subscription state, one entry per PR scope key. Subscription is a fact
 	// (facts.md), persisted here for the plugin process's lifetime; tln-db
@@ -98,10 +117,17 @@ func New() *Server {
 		factRetention: defaultFactRetention,
 		limiter:       newRateLimiter(defaultRateLimit),
 		logger:        slog.Default(),
+		llmQuota:      map[string]int64{},
+		llmCache:      map[string]llm.Result{},
 	}
 	registerActions(s)
 	return s
 }
+
+// SetStandalone marks the server as running without an OpenTalon host (TCP
+// mode). It must be called before serving. In standalone mode llm_review is
+// unavailable — there is no host callback channel to perform the model call.
+func (s *Server) SetStandalone(v bool) { s.standalone = v }
 
 // register adds one action to the registry.
 //
@@ -131,18 +157,43 @@ func (s *Server) Capabilities() plugin.CapabilitiesMsg {
 	for _, name := range s.order {
 		acts = append(acts, s.actions[name].def)
 	}
-	return plugin.CapabilitiesMsg{Name: s.name, Description: s.desc, Actions: acts}
+	return plugin.CapabilitiesMsg{
+		Name:        s.name,
+		Description: s.desc,
+		Actions:     acts,
+		// evaluate_pr may fire llm_review, which the plugin performs by calling
+		// the host builtin _subprocess.run over the callback channel. Declaring
+		// this makes the host dispatch our actions over ExecuteBidi and hand us
+		// a live HostCaller (protocol.md; llm-review.md). In TCP standalone mode
+		// nothing reads this — the caller uses unary Execute.
+		SupportsCallbacks: true,
+	}
 }
 
-// Execute routes an action call to its registered handler. Unknown actions are
-// a caller error, returned as such rather than as a transport failure.
-//
-// Once the plugin is configured it is the internet-facing gate: every action
-// authenticates the API key (fail closed), is rate-limited per key, and logs
-// the caller — so a tenant can answer "which repo burned my quota" without a
-// model in the loop. An unconfigured Server (tests/dev) skips the gate; whoami
-// keeps its own fail-closed auth regardless. It satisfies plugin.Handler.
+// Execute routes an action call to its registered handler. It is the unary
+// entry point, used in TCP standalone mode where there is no host and so no
+// callback channel; llm_review therefore has no model to reach here and
+// degrades to result="error" (evaluate.go). It satisfies plugin.Handler.
 func (s *Server) Execute(req plugin.Request) plugin.Response {
+	return s.dispatch(context.Background(), req, nil)
+}
+
+// ExecuteWithCallbacks is the streaming entry point the host uses when
+// SupportsCallbacks is advertised. It threads the live HostCaller to evaluate_pr
+// so a fired llm_review can call the host builtin _subprocess.run. It satisfies
+// plugin.StreamingHandler.
+func (s *Server) ExecuteWithCallbacks(ctx context.Context, req plugin.Request, host plugin.HostCaller) plugin.Response {
+	return s.dispatch(ctx, req, host)
+}
+
+// dispatch is the shared gate and router for both entry points. Once the plugin
+// is configured it is the internet-facing gate: every action authenticates the
+// API key (fail closed), is rate-limited per key, and logs the caller — so a
+// tenant can answer "which repo burned my quota" without a model in the loop. An
+// unconfigured Server (tests/dev) skips the gate; whoami keeps its own
+// fail-closed auth regardless. Only evaluate_pr receives the HostCaller; every
+// other action is a pure function of its request.
+func (s *Server) dispatch(ctx context.Context, req plugin.Request, host plugin.HostCaller) plugin.Response {
 	a, ok := s.actions[req.Action]
 	if !ok {
 		return plugin.Response{CallID: req.ID, Error: fmt.Sprintf("talooner: unknown action %q", req.Action)}
@@ -160,6 +211,9 @@ func (s *Server) Execute(req plugin.Request) plugin.Response {
 		s.logCaller(req, tenant)
 	}
 
+	if req.Action == "evaluate_pr" {
+		return s.evaluatePR(ctx, req, host)
+	}
 	return a.handler(req)
 }
 

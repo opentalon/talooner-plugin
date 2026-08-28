@@ -15,10 +15,14 @@ See `diagrams.md` §2b for the picture.
    a full re-derivation, never a delta. This is what makes approval retraction
    work (`diagrams.md` §4). Details in `facts.md`.
 4. **Engine** — `tln-language`'s RETE-ish reactive engine.
-5. **`llm_review`** — invoked only when a rule fires it, and the one action this
-   plugin performs rather than returns. Its results land as facts, so the engine
-   runs a **second pass** when any fired; rules reading `llm_review.*` reach a
-   verdict there. Bounded at two passes. See `llm-review.md`.
+5. **`llm_review`** — invoked through tln's native `tool "llm" "review"` step in
+   an `enrich` block, resolved by this plugin's `ToolResolver`, not a `do` verb.
+   The resolver asks the OpenTalon host to run a bounded, tool-less sub-agent
+   (`host.RunAction("_subprocess", "run", …)`) per `code_unit` record, using the
+   cluster's credentials, and writes the verdict onto that record. Because tln
+   runs blocks unordered and doesn't re-evaluate rules after an enrich, this is a
+   **two-pass** evaluation over one store (enrich populates, rules read); the
+   resolver owns the head-sha cache and the per-tenant quota. See `llm-review.md`.
 6. **Defeasible resolution** — `strict` > `overrides` > priority
    (`tln-language/docs/defeasible.md`). Not an ad-hoc "block wins" in Go.
 7. **`explain` / audit** — persisted before returning, so a decision is queryable

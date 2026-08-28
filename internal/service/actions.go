@@ -1,6 +1,8 @@
 package service
 
 import (
+	"context"
+
 	"github.com/opentalon/opentalon/pkg/plugin"
 )
 
@@ -23,8 +25,12 @@ func registerActions(s *Server) {
 			{Name: "mode", Description: "execute (default) or plan", Type: "string", Required: false},
 			{Name: "force", Description: "Bypass the llm_review fact cache for this evaluation (bool)", Type: "string", Required: false},
 			{Name: "modules", Description: "Touched modules (JSON list of {name, changed_lines, documentation_urls}); module.* binds to the primary", Type: "string", Required: false},
+			{Name: "code_units", Description: "Touched, documented code units for llm_review (JSON list of {name, important, doc_url, doc_content, diff}); doc_content is read from the base branch. Each becomes a code_unit record.", Type: "string", Required: false},
 		},
-	}, s.evaluatePR)
+		// dispatch routes evaluate_pr to s.evaluatePR directly so it can receive
+		// the HostCaller; this registered handler is the host-less fallback for a
+		// direct/unary invocation and never fires an llm_review model call.
+	}, func(req plugin.Request) plugin.Response { return s.evaluatePR(context.Background(), req, nil) })
 
 	s.register(plugin.ActionMsg{
 		Name:        "is_subscribed",

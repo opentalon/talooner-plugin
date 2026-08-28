@@ -23,6 +23,10 @@ func main() {
 
 	// TCP mode: TALOONER_GRPC_PORT=50051 → listen on TCP; print handshake; serve.
 	if port := os.Getenv("TALOONER_GRPC_PORT"); port != "" {
+		// No host in this mode, so no callback channel: llm_review has no model to
+		// reach. Mark standalone so whoami withdraws the feature and a fired
+		// llm_review degrades to result="error" instead of panicking on a nil host.
+		srv.SetStandalone(true)
 		// No host to call the Init RPC in this mode, so the same config block
 		// travels via TALOONER_CONFIG instead — Configure has no other caller.
 		if err := srv.Configure(os.Getenv("TALOONER_CONFIG")); err != nil {

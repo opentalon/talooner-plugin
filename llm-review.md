@@ -5,63 +5,90 @@ is the only component holding provider credentials**. The bot never sees a model
 
 Diagram: `diagrams.md` §5.
 
-`llm_review` is a `do` verb like any other — the engine returns it as an action,
-and this plugin is the host that performs it instead of handing it to the bot:
+`llm_review` is **not a `do` verb**. The model is invoked through tln's native
+`tool "llm" "review"` step inside an `enrich` block, resolved by this plugin's
+`ToolResolver`. The engine calls the tool per matching record and writes the
+verdict back onto that record; rules then react to it like any other fact:
 
 ```tln
-rule "Check code against module docs" {
-  for records where type == "pr"
-    and attr "module.documentation_url" != ""
-  do llm_review attr "module.documentation_url"
+enrich "Review touched code units against their docs" {
+  for records where type == "code_unit" and attr "unit.important" == true
+  stale_after 1 hour
+  tool "llm" "review" {
+    unit attr "unit.name"
+    doc  attr "unit.doc_content"
+    diff attr "unit.diff"
+  }
+  update attr "unit.llm_result"      from result.verdict
+  update attr "unit.llm_explanation" from result.explanation
 }
 
 rule "Block on a documented mismatch" {
-  for records where type == "pr"
-    and attr "llm_review.result" == "mismatch"
-  block "merge"
+  for records where type == "code_unit" and attr "unit.llm_result" == "mismatch"
   do block "pr.merge"
-  do comment "pr" "Code contradicts the module docs: {attr.llm_review.explanation}"
+  do comment "pr" "Code contradicts the module docs"
 }
 ```
 
+The **granularity is one review per code unit** (a model/controller/service),
+not one per PR: each `code_unit` record carries its own doc mapping and diff
+slice, and `unit.important` gates the call for token economy. The bot supplies
+the code units on `evaluate_pr` (`code_units`, `facts.md`), reading each unit's
+**documentation content from the base branch** — so a fork PR cannot rewrite the
+thing it is judged against. The bot never sees a model.
+
+### The call goes through the host, not a provider SDK
+
+The cluster holds the credentials, but they live in the **OpenTalon host**, not
+this plugin. So the plugin does not embed a provider SDK; its `ToolResolver`
+asks the host to do the call:
+
+- The plugin declares `SupportsCallbacks` and implements
+  `StreamingHandler.ExecuteWithCallbacks`, so the host dispatches `evaluate_pr`
+  over `ExecuteBidi` and hands it a live `HostCaller`.
+- On each `tool "llm" "review"` step the resolver calls
+  `host.RunAction("_subprocess", "run", {task, tools: "none", max_iterations: "1"})`
+  — a bounded, single-turn, **tool-less** sub-agent (`tools: "none"`, so an
+  injected "run the deploy tool" from the diff can't fire). The host runs it
+  with the tenant's cluster credentials and returns the answer inline.
+- Token spend is metered by the host (`opentalon_llm_*` per entity,
+  `opentalon_plugin_*` per plugin/action), so a review is attributable to the
+  calling repo/workflow without inspecting model output.
+
+The resolver owns two things tln cannot express: it constrains the answer to the
+fixed enum below, and it enforces the caps and the cache (next section).
+
+**Standalone TCP mode has no host**, so no callback channel. There, `whoami`
+withdraws `llm_review` from the tenant's features and a fired review degrades to
+`result: "error"` — it never reaches a model that isn't there.
+
+### Two passes, and why the cache lives in the resolver
+
+tln executes blocks **unordered** and never re-evaluates rules after an `enrich`,
+so a rule cannot see the verdict an enrich produced in the *same* run. So
+`evaluate_pr` runs the engine **twice** over one fact store when there are code
+units: pass 1 installs the resolver and the `enrich` step populates
+`unit.llm_result` on each record; pass 2 runs with no resolver (enrich is a
+no-op) and the rules read the now-present facts. Rulesets with no code units run
+a single pass and pay nothing.
+
+`stale_after` is tln's own freshness gate, but it **cannot be talooner's cache**:
+the fact store is rebuilt per `evaluate_pr`, so write-times reset every run.
+Determinism (decision 9/18 — "same head sha ⇒ one call, byte-identical") is
+therefore the resolver's job. It caches each verdict keyed by
+`(scope, head_sha, unit, prompt_version)`:
+
 ```
-rule fires llm_review(doc_url, diff)
-  → look up fact (pr, head_sha, doc_url, prompt_version)
-      hit  → return it. No API call, no spend.       ← unless force=true
-      miss → call the model → store result as a fact → return it
+tool "llm" "review" fires for a code_unit
+  → look up (scope, head_sha, unit, prompt_version)
+      hit  → return it. No host call, no spend.     ← unless force=true
+      miss → check the per-tenant quota
+               exhausted → verdict "error", no call
+               ok        → host runs the model → cache it → return it
 ```
 
-**It is the one verb the plugin executes rather than returns**, and that is a
-deliberate exception worth naming: every other verb crosses the wire because
-only the bot holds a GitHub token, while this one must not, because only the
-cluster holds provider credentials. The bot never sees it in the returned
-action list.
-
-### The second pass this implies
-
-The two rules above are in a producer/consumer relationship: the first fires an
-action, the action asserts `llm_review.*`, and the second reads those facts as
-*conditions*. Conditions are evaluated before actions fire, so a single engine
-pass cannot serve both — the consumer rule sees no `llm_review.result` on the
-pass that produced it.
-
-So `evaluate_pr` runs the engine **twice** when any `llm_review` action fired:
-once to decide and produce, then once more with the resulting facts asserted.
-The second pass is where the verdict actually lands. Consequences:
-
-- **Bounded at two passes, not fixed-point.** An `llm_review` fired *by* a
-  second-pass rule is not evaluated a third time; `validate_ruleset` warns when
-  a rule both reads `llm_review.*` and fires `llm_review`. Iterating to a
-  fixed point would make spend unbounded from a ruleset, which is the one
-  property a fork PR must not have.
-- **Determinism is unaffected.** The second pass reads facts keyed by head sha,
-  so a re-run at the same sha replays them without a model call.
-- **Rulesets with no `llm_review` pay nothing** — the second pass only happens
-  when the first produced one.
-
-The fact store *is* the cache. No separate cache layer, no invalidation logic: a
-new commit means a new head sha means the fact is absent means the model runs
-again.
+A new commit means a new head sha means a cache miss means the model runs again.
+`force` bypasses the hit but not the quota.
 
 This is what makes decision 18 cheap. `@talooner /review` always re-evaluates
 rather than re-rendering a stored verdict, and that costs nothing at an unchanged

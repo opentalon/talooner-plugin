@@ -9,6 +9,7 @@ import (
 	"github.com/opentalon/opentalon/pkg/plugin"
 	"github.com/opentalon/tln-language/pkg/tln"
 
+	"github.com/opentalon/talooner-plugin/internal/auth"
 	"github.com/opentalon/talooner-plugin/internal/facts"
 	"github.com/opentalon/talooner-plugin/internal/ruleset"
 	"github.com/opentalon/talooner-plugin/proto/taloonerpb"
@@ -28,7 +29,7 @@ import (
 // are returned in the distinct `plan` field, never `actions`, and nothing is
 // persisted. The distinction lives in the payload shape, so a caller cannot
 // execute a plan by accident.
-func (s *Server) evaluatePR(req plugin.Request) plugin.Response {
+func (s *Server) evaluatePR(ctx context.Context, req plugin.Request, host plugin.HostCaller) plugin.Response {
 	mode := req.Args["mode"]
 	switch mode {
 	case "", "execute", "plan":
@@ -54,7 +55,10 @@ func (s *Server) evaluatePR(req plugin.Request) plugin.Response {
 		return errorResponse(req, err)
 	}
 
-	ctx := context.Background()
+	units, err := parseCodeUnits(req.Args["code_units"])
+	if err != nil {
+		return errorResponse(req, err)
+	}
 
 	// Full re-derivation over the durable prior: custom tenant-CI facts asserted
 	// via assert_facts survive (they are not bot-owned), and the request's bot
@@ -74,9 +78,55 @@ func (s *Server) evaluatePR(req plugin.Request) plugin.Response {
 	if err := scope.Assert(ctx, state); err != nil {
 		return errorResponse(req, fmt.Errorf("talooner: assert facts: %w", err))
 	}
+	// One code_unit record per touched, documented unit. A ruleset's enrich block
+	// selects these (`for records where type == "code_unit"`) to review them.
+	// Record IDs must be integers (the fact store's constraint); the PR record is
+	// "1", so units start at "2".
+	for i, u := range units {
+		if err := scope.AssertRecord(ctx, strconv.Itoa(i+2), "code_unit", u.factSet()); err != nil {
+			return errorResponse(req, fmt.Errorf("talooner: assert code unit %q: %w", u.Name, err))
+		}
+	}
 
 	tenantRuleset := req.Args["ruleset"]
-	result, err := ruleset.Evaluate(ctx, tenantRuleset, scope.Store())
+	meta := ruleset.RuleMeta(tenantRuleset)
+
+	var warnings []*taloonerpb.Warning
+
+	// llm_review runs through tln's native enrich/tool step. Because tln executes
+	// blocks unordered and never re-evaluates rules after an enrich, a rule cannot
+	// see the review result an enrich produced in the same run — so evaluation is
+	// two passes over one store:
+	//   pass 1 — with the resolver installed, the enrich `tool "llm" "review"`
+	//            step fires per code_unit, and its verdict is asserted onto that
+	//            record (unit.llm_result, …). Rule actions from this pass are
+	//            discarded; the pass exists to populate facts.
+	//   pass 2 — no resolver (enrich is a no-op), rules read the now-present
+	//            unit.* facts and their actions are the decision.
+	// Plan mode never installs a resolver, so the model is never called.
+	if !planMode && len(units) > 0 {
+		tenant, _ := s.auth.Authenticate(req.Args[auth.ArgAPIKey])
+		resolver := &reviewResolver{
+			srv:      s,
+			host:     host, // nil in standalone mode → verdict "error", no spend
+			tenant:   tenant,
+			scopeKey: key,
+			headSHA:  req.Args["head_sha"],
+			force:    req.Args["force"] == "true",
+		}
+		if _, evalErr := ruleset.Evaluate(ctx, tenantRuleset, scope.Store(), resolver); evalErr != nil {
+			return errorResponse(req, fmt.Errorf("talooner: evaluate ruleset (enrich pass): %w", evalErr))
+		}
+	} else if planMode && len(units) > 0 {
+		warnings = append(warnings, &taloonerpb.Warning{
+			Code:    "llm_review_planned",
+			Message: fmt.Sprintf("%d code unit(s) would be reviewed by the model on execute", len(units)),
+		})
+	}
+
+	// The decision pass. No resolver: enrich is a no-op, rules read the facts
+	// populated above (if any).
+	result, err := ruleset.Evaluate(ctx, tenantRuleset, scope.Store(), nil)
 	if err != nil {
 		return errorResponse(req, fmt.Errorf("talooner: evaluate ruleset: %w", err))
 	}
@@ -85,12 +135,13 @@ func (s *Server) evaluatePR(req plugin.Request) plugin.Response {
 	// applies the remaining strict > priority precedence to any standing
 	// approve/block conflict, dropping the defeated side's actions or warning on
 	// an unresolved tie (P-C1).
-	resolved, conflictWarnings := resolveConflicts(result.Actions, ruleset.RuleMeta(tenantRuleset))
-
-	actions, warnings := mapActions(resolved)
+	resolved, conflictWarnings := resolveConflicts(result.Actions, meta)
 	for _, w := range conflictWarnings {
 		warnings = append(warnings, &taloonerpb.Warning{Code: "unresolved_conflict", Message: w})
 	}
+
+	actions, mapWarnings := mapActions(resolved)
+	warnings = append(warnings, mapWarnings...)
 	fired := firedRuleNames(resolved)
 	explain := buildExplain(fired)
 

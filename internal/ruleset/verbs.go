@@ -9,6 +9,10 @@ import (
 // `do <verb>` clause (engine.md, "The verb list is ours to enforce"). Adding a
 // verb here means adding a matching executor in the bot repo; keeping the two
 // sets identical is what stops them drifting.
+//
+// llm_review is not a verb: the model is invoked through tln's native
+// `tool "llm" "review"` step inside an `enrich` block, resolved by this plugin's
+// ToolResolver, not through a `do` action (llm-review.md).
 var AllowedVerbs = []string{"approve", "block", "comment", "assign", "require", "notify", "emit"}
 
 var allowedVerbSet = func() map[string]bool {

@@ -48,7 +48,7 @@ and when a person invokes the action directly.
 
 | Action | Args | Returns (`structured_content`) |
 |---|---|---|
-| `evaluate_pr` | `repo`, `pr`, `head_sha`, `facts` (JSON), `ruleset` (text), `mode` (`execute` \| `plan`), `force` (bool) | `{actions: [...], explain: {...}, warnings: [...]}` — under `mode: plan`, a `plan[]` field and **no** `actions` key |
+| `evaluate_pr` | `repo`, `pr`, `head_sha`, `facts` (JSON), `ruleset` (text), `mode` (`execute` \| `plan`), `force` (bool), `modules` (JSON), `code_units` (JSON — per-unit `{name, important, doc_url, doc_content, diff}` for `llm_review`, doc content from the base branch) | `{actions: [...], explain: {...}, warnings: [...]}` — under `mode: plan`, a `plan[]` field and **no** `actions` key |
 | `is_subscribed` | `repo`, `pr` | `{subscribed: bool, since: ts}` |
 | `set_subscription` | `repo`, `pr`, `state` | `{subscribed: bool}` |
 | `assert_facts` | `repo`, `pr`, `facts` (JSON) | `{accepted: [...], rejected: [...]}` — the custom-facts path, **store-only in v1** |
@@ -61,7 +61,12 @@ and when a person invokes the action directly.
 it to know whether `llm_review` is even available before loading a ruleset that
 depends on it — a ruleset using `llm_review` on a cluster without a configured
 provider gets a validation warning at load time, not a runtime failure on the
-first PR.
+first PR. `llm_review` is performed by asking the OpenTalon host to run a bounded
+sub-agent (`_subprocess.run`), so the plugin declares `SupportsCallbacks` and the
+host dispatches `evaluate_pr` over `ExecuteBidi` to hand it a callback channel.
+Running standalone (TCP mode) there is no host and no channel, so `whoami` omits
+`llm_review` from `features` and a fired `llm_review` degrades to
+`result: "error"` (`llm-review.md`).
 
 `protocol_version` is new, and decision 1 is why. The action version is pinned in
 each tenant's workflow file (`opentalon/talooner@v1`, or a sha); the plugin
