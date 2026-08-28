@@ -20,6 +20,7 @@ import (
 
 	"github.com/opentalon/talooner-plugin/internal/auth"
 	"github.com/opentalon/talooner-plugin/internal/facts"
+	"github.com/opentalon/talooner-plugin/internal/llm"
 	"github.com/opentalon/talooner-plugin/proto/taloonerpb"
 )
 
@@ -60,10 +61,10 @@ type Server struct {
 	// llmMu, which also guards llmCache.
 	llmMu    sync.Mutex
 	llmQuota map[string]int64
-	// llmCache is the fact-store-is-the-cache: llm_review.* results keyed by
-	// (scope, head_sha, doc_url, prompt_version). A hit costs no call and no
+	// llmCache is the fact-store-is-the-cache: llm_review verdicts keyed by
+	// (scope, head_sha, code unit, prompt_version). A hit costs no call and no
 	// spend; tln-db backs this in a cluster (llm-review.md, decision 9).
-	llmCache map[string]facts.Set
+	llmCache map[string]llm.Result
 
 	// subscription state, one entry per PR scope key. Subscription is a fact
 	// (facts.md), persisted here for the plugin process's lifetime; tln-db
@@ -117,7 +118,7 @@ func New() *Server {
 		limiter:       newRateLimiter(defaultRateLimit),
 		logger:        slog.Default(),
 		llmQuota:      map[string]int64{},
-		llmCache:      map[string]facts.Set{},
+		llmCache:      map[string]llm.Result{},
 	}
 	registerActions(s)
 	return s

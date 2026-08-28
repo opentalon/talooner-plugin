@@ -7,14 +7,13 @@ import (
 	"github.com/opentalon/opentalon/pkg/plugin"
 
 	"github.com/opentalon/talooner-plugin/internal/auth"
-	"github.com/opentalon/talooner-plugin/internal/ruleset"
 	"github.com/opentalon/talooner-plugin/proto/taloonerpb"
 )
 
 // featureLLMReview is the whoami feature name a caller checks before loading a
-// ruleset that uses llm_review. It matches the verb so config and handshake read
-// the same (auth.Tenant.HasFeature).
-const featureLLMReview = ruleset.VerbLLMReview
+// ruleset that uses llm_review, so config and handshake read the same
+// (auth.Tenant.HasFeature).
+const featureLLMReview = "llm_review"
 
 // availableFeatures is the tenant's configured features minus any the running
 // deployment can't honour. In standalone mode (TCP, no host) there is no

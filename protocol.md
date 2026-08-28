@@ -48,7 +48,7 @@ and when a person invokes the action directly.
 
 | Action | Args | Returns (`structured_content`) |
 |---|---|---|
-| `evaluate_pr` | `repo`, `pr`, `head_sha`, `facts` (JSON), `ruleset` (text), `mode` (`execute` \| `plan`), `force` (bool) | `{actions: [...], explain: {...}, warnings: [...]}` — under `mode: plan`, a `plan[]` field and **no** `actions` key |
+| `evaluate_pr` | `repo`, `pr`, `head_sha`, `facts` (JSON), `ruleset` (text), `mode` (`execute` \| `plan`), `force` (bool), `modules` (JSON), `code_units` (JSON — per-unit `{name, important, doc_url, doc_content, diff}` for `llm_review`, doc content from the base branch) | `{actions: [...], explain: {...}, warnings: [...]}` — under `mode: plan`, a `plan[]` field and **no** `actions` key |
 | `is_subscribed` | `repo`, `pr` | `{subscribed: bool, since: ts}` |
 | `set_subscription` | `repo`, `pr`, `state` | `{subscribed: bool}` |
 | `assert_facts` | `repo`, `pr`, `facts` (JSON) | `{accepted: [...], rejected: [...]}` — the custom-facts path, **store-only in v1** |

@@ -17,7 +17,7 @@ Read it once; this file covers what happens to those facts after they arrive.
 | `user.*` | CODEOWNERS + `modules.yaml` + GitHub | per PR run | **no** |
 | `repo.*` | repo config / GitHub metadata | per PR run | **no** |
 | `review.*` | `pull_request_review` events | per PR, accumulates | **no** |
-| `llm_review.*` | this plugin, from an LLM call | pinned to head sha | **no** |
+| `unit.*` | bot (`code_units`); review results (`unit.llm_result`, …) written by this plugin's `enrich` step | per PR run, one `code_unit` record each; verdict cached by head sha | **no** |
 | `module.*`, `team.*` | tenant-supplied lookup tables | static per repo | no |
 | `event.*` | `do emit <name>` | per evaluation | no |
 | custom (`preview.*`, `screenshots.*`, `dependency_scan.*`, …) | pushed by tenant CI | until PR closes | yes — store-only, read at the next `evaluate_pr` |
@@ -177,19 +177,20 @@ Two edges tenant rules hit, both worth a `validate_ruleset` lint later:
   locally; term-AND on Datalevin. `matches "**/*.css"` matches nothing — no path
   contains that text. Path predicates use `contains` and `ends_with`.
 
-## Cardinality: one evaluation per PR
+## Cardinality: one rule evaluation, per-unit review
 
-A PR touching five modules is evaluated **once**, not five times. `module.*` binds
-to the **primary** touched module: the one with the most changed lines, ties
-broken by path order for determinism.
+The **rule engine** evaluates once per PR — `module.*` binds to the **primary**
+touched module (most changed lines, ties broken by path order for determinism),
+so "did the bot approve?" is one answer, not a fold over N.
 
-Re-running the ruleset per touched module would multiply every `llm_review` by
-the number of touched modules and make "did the bot approve?" a fold over N
-results instead of one answer. Not worth it.
-
-The cost, so it isn't a surprise later: a PR that changes `auth/` heavily and
-`billing/` slightly only ever checks its diff against the `auth/` docs.
-`module.documentation_urls` (list) and `module.touched_count` are both asserted
-so a ruleset can compensate — a future `llm_review` variant could take the list,
-and a strict tenant can require narrow PRs with
-`when attr "module.touched_count" > 1`.
+**`llm_review` is the exception, and it is per code unit.** The bot sends
+`code_units` on `evaluate_pr` — one entry per touched, documented unit
+(model/controller/service), each carrying its own `doc_content` (read from the
+base branch) and `diff` slice. Each becomes a `code_unit` record, and an
+`enrich` block reviews the ones flagged `unit.important` (the token-economy
+gate). A verdict lands on its own record (`unit.llm_result`,
+`unit.llm_explanation`), cached by head sha; a consumer rule selects
+`for records where type == "code_unit"` and reacts. Reviewing per unit — rather
+than once against the primary module's docs — is what lets a PR spanning `auth/`
+and `billing/` be judged against *both* sets of docs, while `unit.important`
+keeps a large PR from reviewing every file.

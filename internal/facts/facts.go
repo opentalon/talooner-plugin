@@ -76,17 +76,26 @@ const prRecordID = "1"
 // not present. Combined with P-B5's fresh per-evaluation store, that is how
 // retraction happens without a store-level delete.
 func (s *Scope) Assert(ctx context.Context, set Set) error {
+	return s.AssertRecord(ctx, prRecordID, "pr", set)
+}
+
+// AssertRecord writes a fact Set as one record of the given type and id, tagged
+// with pr_key = the scope key. It is how a scope holds more than the single PR
+// record — e.g. one code_unit record per touched, documented code unit, which a
+// rule selects with `for records where type == "code_unit"`. Isolation still
+// comes from the scope: another PR's records live in another store.
+func (s *Scope) AssertRecord(ctx context.Context, recordID, recordType string, set Set) error {
 	out := make([]tln.Fact, 0, len(set)+2)
 	out = append(out,
-		tln.Fact{RecordID: prRecordID, Attribute: ":record/type", Value: "pr"},
-		tln.Fact{RecordID: prRecordID, Attribute: ":attr/" + KeyAttr, Value: s.key},
+		tln.Fact{RecordID: recordID, Attribute: ":record/type", Value: recordType},
+		tln.Fact{RecordID: recordID, Attribute: ":attr/" + KeyAttr, Value: s.key},
 	)
 	for attr, v := range set {
 		fv, err := factValue(v)
 		if err != nil {
 			return fmt.Errorf("facts: attribute %q: %w", attr, err)
 		}
-		out = append(out, tln.Fact{RecordID: prRecordID, Attribute: ":attr/" + attr, Value: fv})
+		out = append(out, tln.Fact{RecordID: recordID, Attribute: ":attr/" + attr, Value: fv})
 	}
 	return s.store.Assert(ctx, out)
 }

@@ -148,6 +148,23 @@ message EvaluatePrRequest {
   // asserts module.documentation_urls and module.touched_count so a ruleset can
   // compensate (facts.md, "Cardinality: one evaluation per PR").
   repeated TouchedModule modules = 8;
+
+  // code_units are the touched, documented units this PR changed, resolved
+  // bot-side. Each becomes a code_unit record; an enrich block reviews the ones
+  // flagged important via `tool "llm" "review"`. doc_content is read from the
+  // BASE branch so a fork PR cannot rewrite what it is judged against
+  // (llm-review.md; facts.md, "Cardinality: one rule evaluation, per-unit review").
+  repeated CodeUnit code_units = 9;
+}
+
+// CodeUnit is one touched, documented unit of code offered for llm_review.
+message CodeUnit {
+  string name = 1; // unit name / path, e.g. "internal/auth"
+  bool important = 2; // gate the model call for token economy
+  string doc_url = 3;
+  string doc_content = 4; // governing docs, read from the base branch
+  string diff = 5; // this unit's slice of the change
+  bool diff_truncated = 6;
 }
 
 // TouchedModule is one module a PR changed, with how many lines and its docs.

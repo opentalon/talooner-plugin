@@ -106,14 +106,21 @@ func Load(tenantSource string) (*Compiled, []Diagnostic, error) {
 // The tenant ruleset is expected to import the strict base (BaseImport); loading
 // resolves that import to the shipped base so base and tenant run as one program
 // and defeasible resolution spans both.
-func Evaluate(ctx context.Context, tenantSource string, store tln.FactStore) (*tln.Result, error) {
+// A resolver is supplied on the pass that should perform tool steps (enrich's
+// `tool "llm" "review"`); pass nil on a pass that must not (plan mode, or the
+// second read-only pass), which stubs tool steps to no-ops.
+func Evaluate(ctx context.Context, tenantSource string, store tln.FactStore, resolver tln.ToolResolver) (*tln.Result, error) {
 	tenantPath, cleanup, err := baseDir()
 	if err != nil {
 		return nil, err
 	}
 	defer cleanup()
 
-	return tln.Run(ctx, tenantSource, tln.WithFilename(tenantPath), tln.WithFactStore(store))
+	opts := []tln.Option{tln.WithFilename(tenantPath), tln.WithFactStore(store)}
+	if resolver != nil {
+		opts = append(opts, tln.WithToolResolver(resolver))
+	}
+	return tln.Run(ctx, tenantSource, opts...)
 }
 
 // baseDir creates a temp directory holding the strict base under BaseFileName
@@ -176,7 +183,6 @@ func RunTests(tenantSource, testSource string) ([]tln.TestResult, []Diagnostic, 
 // validate_ruleset action and `talooner rules validate`.
 func Validate(tenantSource string) (valid bool, diags []Diagnostic) {
 	diags = append(diags, CheckVerbs(tenantSource)...)
-	diags = append(diags, LintLLMReview(tenantSource)...)
 
 	// Load surfaces parse/compile/import errors (already relabelled to
 	// TenantFile). The compiled result is discarded — validation only cares

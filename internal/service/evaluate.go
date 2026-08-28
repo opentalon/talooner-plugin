@@ -9,6 +9,7 @@ import (
 	"github.com/opentalon/opentalon/pkg/plugin"
 	"github.com/opentalon/tln-language/pkg/tln"
 
+	"github.com/opentalon/talooner-plugin/internal/auth"
 	"github.com/opentalon/talooner-plugin/internal/facts"
 	"github.com/opentalon/talooner-plugin/internal/ruleset"
 	"github.com/opentalon/talooner-plugin/proto/taloonerpb"
@@ -54,6 +55,11 @@ func (s *Server) evaluatePR(ctx context.Context, req plugin.Request, host plugin
 		return errorResponse(req, err)
 	}
 
+	units, err := parseCodeUnits(req.Args["code_units"])
+	if err != nil {
+		return errorResponse(req, err)
+	}
+
 	// Full re-derivation over the durable prior: custom tenant-CI facts asserted
 	// via assert_facts survive (they are not bot-owned), and the request's bot
 	// facts replace the previous ones. This is how an out-of-band assert_facts
@@ -72,9 +78,55 @@ func (s *Server) evaluatePR(ctx context.Context, req plugin.Request, host plugin
 	if err := scope.Assert(ctx, state); err != nil {
 		return errorResponse(req, fmt.Errorf("talooner: assert facts: %w", err))
 	}
+	// One code_unit record per touched, documented unit. A ruleset's enrich block
+	// selects these (`for records where type == "code_unit"`) to review them.
+	// Record IDs must be integers (the fact store's constraint); the PR record is
+	// "1", so units start at "2".
+	for i, u := range units {
+		if err := scope.AssertRecord(ctx, strconv.Itoa(i+2), "code_unit", u.factSet()); err != nil {
+			return errorResponse(req, fmt.Errorf("talooner: assert code unit %q: %w", u.Name, err))
+		}
+	}
 
 	tenantRuleset := req.Args["ruleset"]
-	result, err := ruleset.Evaluate(ctx, tenantRuleset, scope.Store())
+	meta := ruleset.RuleMeta(tenantRuleset)
+
+	var warnings []*taloonerpb.Warning
+
+	// llm_review runs through tln's native enrich/tool step. Because tln executes
+	// blocks unordered and never re-evaluates rules after an enrich, a rule cannot
+	// see the review result an enrich produced in the same run — so evaluation is
+	// two passes over one store:
+	//   pass 1 — with the resolver installed, the enrich `tool "llm" "review"`
+	//            step fires per code_unit, and its verdict is asserted onto that
+	//            record (unit.llm_result, …). Rule actions from this pass are
+	//            discarded; the pass exists to populate facts.
+	//   pass 2 — no resolver (enrich is a no-op), rules read the now-present
+	//            unit.* facts and their actions are the decision.
+	// Plan mode never installs a resolver, so the model is never called.
+	if !planMode && len(units) > 0 {
+		tenant, _ := s.auth.Authenticate(req.Args[auth.ArgAPIKey])
+		resolver := &reviewResolver{
+			srv:      s,
+			host:     host, // nil in standalone mode → verdict "error", no spend
+			tenant:   tenant,
+			scopeKey: key,
+			headSHA:  req.Args["head_sha"],
+			force:    req.Args["force"] == "true",
+		}
+		if _, evalErr := ruleset.Evaluate(ctx, tenantRuleset, scope.Store(), resolver); evalErr != nil {
+			return errorResponse(req, fmt.Errorf("talooner: evaluate ruleset (enrich pass): %w", evalErr))
+		}
+	} else if planMode && len(units) > 0 {
+		warnings = append(warnings, &taloonerpb.Warning{
+			Code:    "llm_review_planned",
+			Message: fmt.Sprintf("%d code unit(s) would be reviewed by the model on execute", len(units)),
+		})
+	}
+
+	// The decision pass. No resolver: enrich is a no-op, rules read the facts
+	// populated above (if any).
+	result, err := ruleset.Evaluate(ctx, tenantRuleset, scope.Store(), nil)
 	if err != nil {
 		return errorResponse(req, fmt.Errorf("talooner: evaluate ruleset: %w", err))
 	}
@@ -83,62 +135,14 @@ func (s *Server) evaluatePR(ctx context.Context, req plugin.Request, host plugin
 	// applies the remaining strict > priority precedence to any standing
 	// approve/block conflict, dropping the defeated side's actions or warning on
 	// an unresolved tie (P-C1).
-	meta := ruleset.RuleMeta(tenantRuleset)
 	resolved, conflictWarnings := resolveConflicts(result.Actions, meta)
-
-	// llm_review is the one verb the plugin performs rather than returns, so it
-	// never reaches the returned action list — split it out here.
-	reviews, rest := splitLLMReviews(resolved)
-
-	var warnings []*taloonerpb.Warning
 	for _, w := range conflictWarnings {
 		warnings = append(warnings, &taloonerpb.Warning{Code: "unresolved_conflict", Message: w})
 	}
 
-	// The second pass. When any llm_review fired, execute it, assert its result
-	// as llm_review.* facts, and re-run the engine so rules reading those facts
-	// reach a verdict. Bounded at two passes — an llm_review fired on the second
-	// pass is not evaluated a third time (llm-review.md). Plan mode never spends:
-	// it reports that a review would fire and stops.
-	if len(reviews) > 0 {
-		if planMode {
-			warnings = append(warnings, &taloonerpb.Warning{
-				Code:    "llm_review_planned",
-				Message: fmt.Sprintf("%d llm_review action(s) would fire and call the model on execute", len(reviews)),
-			})
-		} else {
-			llmSet, llmWarnings := s.resolveLLMReviews(ctx, host, req, key, state, reviews)
-			warnings = append(warnings, llmWarnings...)
-
-			state = cloneSet(state)
-			for k, v := range llmSet {
-				state[k] = v
-			}
-			scope2 := facts.NewScope(key)
-			if err := scope2.Assert(ctx, state); err != nil {
-				return errorResponse(req, fmt.Errorf("talooner: assert llm_review facts: %w", err))
-			}
-			result2, evalErr := ruleset.Evaluate(ctx, tenantRuleset, scope2.Store())
-			if evalErr != nil {
-				return errorResponse(req, fmt.Errorf("talooner: evaluate ruleset (second pass): %w", evalErr))
-			}
-			resolved2, conflictWarnings2 := resolveConflicts(result2.Actions, meta)
-			// Bounded at two passes: a producer rule re-fires llm_review on the
-			// second pass (its condition still holds), but we do not call the model
-			// again — the result is already cached and asserted. Silently drop any
-			// second-pass llm_review; validate_ruleset warns at load time about the
-			// one shape that actually matters (a rule that both reads and fires).
-			_, rest2 := splitLLMReviews(resolved2)
-			for _, w := range conflictWarnings2 {
-				warnings = append(warnings, &taloonerpb.Warning{Code: "unresolved_conflict", Message: w})
-			}
-			rest = rest2
-		}
-	}
-
-	actions, mapWarnings := mapActions(rest)
+	actions, mapWarnings := mapActions(resolved)
 	warnings = append(warnings, mapWarnings...)
-	fired := firedRuleNames(rest)
+	fired := firedRuleNames(resolved)
 	explain := buildExplain(fired)
 
 	// Plan mode is a dry run: return the actions that would fire in the distinct
@@ -209,20 +213,6 @@ func subtract(all, remove []string) []string {
 	return out
 }
 
-// splitLLMReviews partitions resolved actions into the llm_review actions the
-// plugin performs itself and the rest it returns to the bot. llm_review is never
-// mapped into the returned action list (llm-review.md).
-func splitLLMReviews(actions []tln.Action) (reviews, rest []tln.Action) {
-	for _, a := range actions {
-		if a.Verb == ruleset.VerbLLMReview {
-			reviews = append(reviews, a)
-			continue
-		}
-		rest = append(rest, a)
-	}
-	return reviews, rest
-}
-
 // mapActions converts fired engine actions to the contract's action list. A verb
 // outside the vocabulary is dropped and surfaced as a warning rather than
 // reaching the bot as an action it cannot execute (engine.md).
@@ -230,12 +220,6 @@ func mapActions(fired []tln.Action) ([]*taloonerpb.Action, []*taloonerpb.Warning
 	var actions []*taloonerpb.Action
 	var warnings []*taloonerpb.Warning
 	for _, a := range fired {
-		// llm_review is performed by the plugin, not returned. It is split out
-		// before mapping; guard here so a stray one is skipped silently rather
-		// than mislabelled as an unknown verb.
-		if a.Verb == ruleset.VerbLLMReview {
-			continue
-		}
 		pa, ok := toProtoAction(a)
 		if !ok {
 			warnings = append(warnings, &taloonerpb.Warning{

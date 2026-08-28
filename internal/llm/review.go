@@ -73,15 +73,15 @@ type Result struct {
 	Explanation string
 }
 
-// ReviewInput is everything the model sees for one review. Every string field
-// except DocURL and HeadSHA is attacker-controlled on a fork PR; the prompt is
-// written to treat it as data (llm-review.md, "Prompt injection is assumed").
+// ReviewInput is everything the model sees for one code unit's review. DocContent
+// is the governing documentation text, read from the base branch by the caller so
+// a fork PR cannot rewrite the thing it is judged against. Diff is attacker-
+// controlled on a fork PR; the prompt treats it as data (llm-review.md, "Prompt
+// injection is assumed").
 type ReviewInput struct {
-	DocURL        string
-	Title         string
-	Body          string
+	Unit          string
+	DocContent    string
 	Diff          string
-	HeadSHA       string
 	DiffTruncated bool
 }
 
@@ -137,9 +137,8 @@ func Review(ctx context.Context, host HostCaller, in ReviewInput) Result {
 // renderPrompt substitutes the input into the template.
 func renderPrompt(in ReviewInput) string {
 	r := strings.NewReplacer(
-		"{{DOC_URL}}", in.DocURL,
-		"{{TITLE}}", in.Title,
-		"{{BODY}}", in.Body,
+		"{{UNIT}}", in.Unit,
+		"{{DOC_CONTENT}}", in.DocContent,
 		"{{DIFF}}", in.Diff,
 	)
 	return r.Replace(promptTemplate)

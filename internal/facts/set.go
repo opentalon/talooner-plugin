@@ -36,7 +36,7 @@ func BotOwns(attr string) bool {
 // CI could POST pr.tests_passing=true and defeat the entire ruleset — and since
 // CI POSTs directly to the cluster, this is the only check that exists
 // (facts.md, "Namespace enforcement lives here").
-var reservedPrefixes = []string{"pr.", "user.", "repo.", "review.", "event.", "llm_review."}
+var reservedPrefixes = []string{"pr.", "user.", "repo.", "review.", "event.", "llm_review.", "unit."}
 
 // Reserved reports whether an attribute is in a reserved namespace and, if so,
 // names it (e.g. "pr.*"). These may not be asserted by a tenant.

@@ -10,18 +10,10 @@ import (
 // verb here means adding a matching executor in the bot repo; keeping the two
 // sets identical is what stops them drifting.
 //
-// llm_review is the exception: it is a valid verb but the plugin performs it
-// itself (via the OpenTalon host) rather than returning it to the bot, so it
-// never appears in the returned action list and has no bot-side executor. It
-// still belongs here because CheckVerbs must accept `do llm_review` as valid
-// source (llm-review.md).
-var AllowedVerbs = []string{"approve", "block", "comment", "assign", "require", "notify", "emit", "llm_review"}
-
-// VerbLLMReview is the one verb this plugin executes instead of returning. It is
-// intercepted after evaluation, run against the host, and its result asserted as
-// llm_review.* facts for a second engine pass — never mapped into the returned
-// actions[] (engine.md §5, llm-review.md).
-const VerbLLMReview = "llm_review"
+// llm_review is not a verb: the model is invoked through tln's native
+// `tool "llm" "review"` step inside an `enrich` block, resolved by this plugin's
+// ToolResolver, not through a `do` action (llm-review.md).
+var AllowedVerbs = []string{"approve", "block", "comment", "assign", "require", "notify", "emit"}
 
 var allowedVerbSet = func() map[string]bool {
 	m := make(map[string]bool, len(AllowedVerbs))
