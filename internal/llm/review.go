@@ -115,8 +115,13 @@ func Review(ctx context.Context, host HostCaller, in ReviewInput) Result {
 	}
 
 	res, err := host.RunAction(ctx, subprocessPlugin, subprocessAction, map[string]string{
-		"task":           renderPrompt(in),
-		"tools":          "", // no tools: a pure judgement, nothing to fetch or mutate
+		"task": renderPrompt(in),
+		// A pure judgement: no tools, so a prompt-injected diff can't induce a
+		// side effect and the single turn ends in an answer, not a tool call.
+		// "none" is an explicit no-tools mode on a current host (opentalon#341);
+		// on an older host it is an allowlist entry that matches no tool, which
+		// is the same zero-tools result. Note "" would mean ALL tools.
+		"tools":          "none",
 		"max_iterations": "1",
 	})
 	if err != nil {
