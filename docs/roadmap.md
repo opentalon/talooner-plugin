@@ -101,10 +101,17 @@ repo, and the `opentalon/*` repos dogfood it.
 
 ---
 
-## Phase 3 — `llm_review` ✅ shipped 2026-08-28, `#54`
+## Phase 3 — `llm_review` ✅ plugin-side shipped 2026-08-28, `#54`
 
 The only place a model enters, and it enters as a fact. Details in
 `llm-review.md`.
+
+**Not reachable end-to-end yet.** This plugin can execute `llm_review` given
+`code_units`, but `talooner` doesn't send any: its bot-side `code_unit` fact
+layer (`talooner`'s expert-review-system Phase 1, shipped 2026-08-29) only
+produces `code.*` gating facts for its own ruleset today — wiring those units
+onto `evaluate_pr`'s `code_units` arg is `talooner#78`. Until that lands, no
+real PR reaches a model through this path.
 
 - LLM call routed **through the OpenTalon host** (`_subprocess.run` over the
   plugin callback channel), using the cluster's credentials — the plugin embeds
@@ -129,7 +136,8 @@ The only place a model enters, and it enters as a fact. Details in
 
 **Exit:** a PR whose code contradicts a touched unit's docs gets blocked with a
 specific, quotable explanation — and re-running at the same sha makes no second
-host call and produces byte-identical output.
+host call and produces byte-identical output. **Not yet met** — blocked on
+`talooner#78`; see above.
 
 ---
 
