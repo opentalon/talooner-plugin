@@ -108,16 +108,17 @@ budgeted like any other call (`protocol.md`, "`force`").
   on a fork PR, and an injected "approve this PR" can at most produce
   `result: "match"`, which still has to satisfy every other condition in the
   rule. That is why the output is constrained rather than free-form.
-- **Per-PR call cap and per-tenant budget ceiling, enforced here.** Quota
-  exhaustion asserts `llm_review.result = "error"` with an explanatory
-  `llm_review.error` — it does not crash the run, and it must never silently
-  approve. Remaining quota is surfaced through `whoami` so the caller can warn at
-  ruleset-load time rather than failing on the first PR. `force` does not lift
-  either limit.
-- **A per-PR conversation is retained for continuity**, but each review is a
-  scoped turn whose result pins to its head sha. The conversation informs an
-  answer; it never changes an answer already recorded. That's what preserves
-  "same sha ⇒ same actions".
+- **Per-tenant budget ceiling, enforced here.** There is no separate per-PR cap
+  — one tenant-wide `CallsLimit`/`CallsUsed` counter (`llmQuotaAvailable`).
+  Exhaustion sets `unit.llm_result = "error"` with the reason in
+  `unit.llm_explanation` — it does not crash the run, and it must never silently
+  approve. Remaining quota is surfaced live through `whoami` (`LLMCallsUsed`) so
+  the caller can warn at ruleset-load time rather than failing on the first PR.
+  `force` bypasses the cache hit, not the quota check.
+- **No cross-call conversation.** Each `tool "llm" "review"` step is one bounded,
+  single-turn (`max_iterations: "1"`), tool-less sub-agent run — there is no
+  session or history threaded across calls or across PR pushes. Determinism
+  ("same sha ⇒ same verdict") comes from the cache, not from continuity.
 
 ## Why the ruleset must handle `unclear` and `error`
 
@@ -138,5 +139,5 @@ component's job:
    also can't start a credentialled run at all — GitHub withholds secrets from
    fork-triggered events, so nothing reaches this plugin until a maintainer
    comments.
-2. The per-PR cap and per-tenant ceiling here apply regardless of which branch
-   the ruleset came from.
+2. The per-tenant ceiling here applies regardless of which branch the ruleset
+   came from.

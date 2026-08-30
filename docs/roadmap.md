@@ -1,9 +1,13 @@
 # `talooner-plugin` — roadmap
 
-Plugin-scoped slice of the ecosystem roadmap. The bot's half and the phase exit
-criteria that involve GitHub live in
-[`talooner/roadmap.md`](https://github.com/opentalon/talooner/blob/main/roadmap.md);
-phases are numbered the same in both so they can be read side by side.
+Plugin-scoped slice of the ecosystem roadmap. `talooner` no longer keeps a
+mirrored `roadmap.md` — the bot's half of open work now lives in
+[`talooner/docs/expert-review-system.md`](https://github.com/opentalon/talooner/blob/main/docs/expert-review-system.md),
+whose "Build order" was the plan for `llm_review` (Phase 3 below) before it
+shipped 2026-08-28; `llm-review.md` is the current design now, and the plan
+diverged from it in a few places (see `llm-review.md` for what's real). Phase
+0–2 numbering here predates that doc and is not the same scheme as its
+Phase 1–5.
 
 Phases are cumulative. Each has an exit criterion that is a thing you can run,
 not a checkbox.
@@ -97,7 +101,7 @@ repo, and the `opentalon/*` repos dogfood it.
 
 ---
 
-## Phase 3 — `llm_review`
+## Phase 3 — `llm_review` ✅ shipped 2026-08-28, `#54`
 
 The only place a model enters, and it enters as a fact. Details in
 `llm-review.md`.
@@ -108,17 +112,24 @@ The only place a model enters, and it enters as a fact. Details in
   the feature and degrades a fired `llm_review` to `result: "error"`
 - Prompt in a `.txt` file, never a Go literal
 - Fixed output enum, result stored as a fact keyed by
-  `(pr, head_sha, doc_url, prompt_version)`
-- Per-PR conversation retained, each review a scoped turn
-- Per-PR call cap, per-tenant budget ceiling, quota surfaced via `whoami`
+  `(scope, head_sha, unit, prompt_version)` on `unit.llm_result` /
+  `unit.llm_explanation`
+- **No cross-call conversation retained** — each review is one bounded,
+  single-turn, tool-less sub-agent run (`llm-review.md`, "No cross-call
+  conversation")
+- Per-tenant budget ceiling, no separate per-PR cap; quota surfaced live via
+  `whoami`
 - `force` arg on `evaluate_pr` — cache bypass for `@talooner /review --force`,
-  with the cap and ceiling still applying (`protocol.md`)
-- Per-module evaluation cardinality decided and implemented (`facts.md`)
-- VCR cassettes
+  the ceiling still applies (`protocol.md`)
+- Per-`code_unit` evaluation cardinality, not per-module — one review per
+  touched, documented unit (`facts.md`, `unit.*`)
+- VCR cassettes — **not done**; current tests (`internal/llm/review_test.go`,
+  `internal/service/llm_review_test.go`) use a fake `HostCaller`, not recorded
+  cassettes
 
-**Exit:** a PR whose code contradicts its module docs gets blocked with a
+**Exit:** a PR whose code contradicts a touched unit's docs gets blocked with a
 specific, quotable explanation — and re-running at the same sha makes no second
-API call and produces byte-identical output.
+host call and produces byte-identical output.
 
 ---
 

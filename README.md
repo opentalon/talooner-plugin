@@ -14,9 +14,13 @@ Module: `github.com/opentalon/talooner-plugin`.
 > exits. It is not a service. Anywhere the distinction matters (crash recovery,
 > connection reuse, who holds what credential), these docs say so explicitly.
 
+> **Superseded.** Written at the repo's first commit, before any code existed.
+> No longer true — real code, proto, and tests have shipped since; Phase 0 and
+> most of Phase 1/2 in `docs/roadmap.md` are done. Kept below for history.
+
 > **Status: design phase.** This repo currently contains design documents only —
 > no code, no proto, nothing runnable. Everything here is subject to change until
-> phase 1 lands. See `roadmap.md`.
+> phase 1 lands. See `docs/roadmap.md`.
 
 ## Responsibility
 
@@ -40,15 +44,15 @@ returned actions.
 
 | File | Contents |
 |---|---|
-| `diagrams.md` | **Start here** — placement in the cluster, internals, the flows this component participates in |
-| `protocol.md` | The OpenTalon plugin contract: actions to declare, `user_only`, payload sizing |
-| `engine.md` | Internals in execution order, the `strict` base ruleset, defeasible conflict resolution, the abstract action vocabulary |
-| `facts.md` | Namespaces, per-PR scoping and lifetime, namespace enforcement, three-valued semantics, retention |
-| `llm-review.md` | The only LLM call anywhere in Talooner, and why the fact store is the cache |
-| `deployment.md` | Running it in a cluster, and the `tln-db` dependency chain — read before the first build |
-| `testing.md` | Unit, ruleset, VCR, and the determinism test |
-| `roadmap.md` | Plugin-scoped phases, and the phase-0 substrate this depends on |
-| `OPEN-QUESTIONS.md` | Phase-0 findings and the calls made on them |
+| `docs/diagrams.md` | **Start here** — placement in the cluster, internals, the flows this component participates in |
+| `docs/protocol.md` | The OpenTalon plugin contract: actions to declare, `user_only`, payload sizing |
+| `docs/engine.md` | Internals in execution order, the `strict` base ruleset, defeasible conflict resolution, the abstract action vocabulary |
+| `docs/facts.md` | Namespaces, per-PR scoping and lifetime, namespace enforcement, three-valued semantics, retention |
+| `docs/llm-review.md` | The only LLM call anywhere in Talooner, shipped 2026-08-28, and why the resolver is the cache |
+| `docs/deployment.md` | Running it in a cluster, and the `tln-db` dependency chain — read before the first build |
+| `docs/testing.md` | Unit, ruleset, VCR, and the determinism test |
+| `docs/roadmap.md` | Plugin-scoped phases, and the phase-0 substrate this depends on |
+| `docs/OPEN-QUESTIONS.md` | Phase-0 findings and the calls made on them |
 
 ## Decisions inherited from the ecosystem
 
@@ -75,6 +79,10 @@ contract change: plugin first, tag, then bump the bot.
 
 ## First task
 
+> **Done.** This was phase 0's exit criterion; met 2026-08-07 — see
+> `tln-language/examples/talooner_review.tln` and `docs/roadmap.md`. Kept below
+> for what the task was and why.
+
 Write the example ruleset from
 [`talooner/README.md`](https://github.com/opentalon/talooner) as a `.tln` +
 `.tln.test` in `tln-language/examples/`, running on synthetic facts, no
@@ -98,8 +106,11 @@ substring scan rather than a glob (write path predicates with `contains` /
 
 ## Contributing
 
+> **Update:** no longer design-only — see `docs/roadmap.md` for current phase
+> and open work. The disagreement invitation below still stands.
+
 Design phase, so the highest-value contribution right now is disagreement.
-`OPEN-QUESTIONS.md` records the phase-0 findings and the calls made on them —
+`docs/OPEN-QUESTIONS.md` records the phase-0 findings and the calls made on them —
 including one accepted risk (A1: unset facts read as false, so a failed
 extraction can approve) that is worth arguing with if you think it's wrong.
 

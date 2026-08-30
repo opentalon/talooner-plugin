@@ -2,7 +2,7 @@
 
 Plugin-scoped. Ecosystem-wide questions live in
 [`talooner/OPEN-QUESTIONS.md`](https://github.com/opentalon/talooner/blob/main/OPEN-QUESTIONS.md).
-Resolved decisions are in `README.md`.
+Resolved decisions are in `../README.md`.
 
 **Nothing here is open, and nothing is blocked.** Phase-0 substrate verification
 is done — read against `tln-language` and `tln-db` at 2026-08-06, with
