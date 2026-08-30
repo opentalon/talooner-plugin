@@ -21,7 +21,7 @@ The interesting cases are the ones that don't fire:
   `pr.changed_files` matches nothing, and a glob-shaped `matches "**/*.css"`
   matches nothing because `matches` is a substring scan
 - `assert_facts` writing `pr.tests_passing` → rejected. One case per forbidden
-  namespace (`pr.*`, `user.*`, `repo.*`, `review.*`, `event.*`, `llm_review.*`),
+  namespace (`pr.*`, `user.*`, `repo.*`, `review.*`, `event.*`, `unit.*`),
   because since decision 1 this is the only filter in the system — the caller has
   no endpoint to filter at (`facts.md`)
 - `assert_facts` on a permitted namespace → accepted, and the response carries

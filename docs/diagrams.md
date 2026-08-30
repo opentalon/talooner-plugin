@@ -4,7 +4,7 @@ Mermaid, so it renders on GitHub and stays diffable in review.
 
 The full set — system context, the bot's internals, PR lifecycle, credential
 blast radius — lives in
-[`talooner/diagrams.md`](https://github.com/opentalon/talooner/blob/main/diagrams.md).
+[`talooner/docs/diagrams.md`](https://github.com/opentalon/talooner/blob/main/docs/diagrams.md).
 This file carries the ones this component is in.
 
 **C4 for structure, UML for behaviour.** Nothing else. Not Mermaid's native
@@ -18,7 +18,7 @@ the boxes. Plain `flowchart` renders the same model correctly.
 | 2 | Components (C4 L3) | Internals, in execution order |
 | 3 | `evaluate_pr` | The request this component exists to serve |
 | 4 | Re-evaluation and retraction | Why facts are re-derived, never deltaed |
-| 5 | `llm_review` | Why there's no cache layer, and where determinism comes from |
+| 5 | `llm_review` | The resolver-owned cache and quota, and where determinism comes from |
 | 6 | Fact sources | Where every fact comes from, and which ones CI may write |
 
 All diagrams verified rendering with `mermaid-cli` 11.16.
@@ -218,41 +218,56 @@ rule whose conditions churn.
 
 ---
 
-## 5. Flow — `llm_review`, and why there is no cache layer
+## 5. Flow — `llm_review`, and why the resolver owns the cache
+
+Shipped 2026-08-28 (#54) as an engine-native tool call, not a `do` verb — the
+diagram below was redrawn to match. Full account: `llm-review.md`.
 
 ```mermaid
 sequenceDiagram
     autonumber
-    participant ENG as Tln engine
-    participant DB as tln-db
-    participant LLMR as llm_review
-    participant Core as OpenTalon core
+    participant ENG as Tln engine (enrich)
+    participant RES as reviewResolver
+    participant Host as OpenTalon host
+    participant SubA as _subprocess (tool-less)
     participant API as LLM provider
 
-    ENG->>LLMR: rule fired: llm_review(doc_url, diff)
-    LLMR->>DB: fact at key<br/>(pr, head_sha, doc_url, prompt_version)?
+    ENG->>RES: tool "llm" "review" fires for a code_unit
+    RES->>RES: cache lookup (scope, head_sha, unit, prompt_version)
 
-    alt fact exists — same sha, already answered
-        DB-->>LLMR: cached result
-        LLMR-->>ENG: llm_review.result (no API call, no spend)
-    else fact absent — new sha or new prompt version
-        LLMR->>Core: review request (tenant credentials)
-        Core->>API: completion
-        API-->>Core: response
-        Core-->>LLMR: constrained output
-        Note over LLMR: enum only:<br/>match | mismatch | unclear |<br/>too_large | error
-        LLMR->>DB: store as fact, pinned to head_sha
-        LLMR-->>ENG: llm_review.result
+    alt cache hit — same sha, already answered
+        RES-->>ENG: cached verdict (no host call, no spend)    note right of RES: unless force=true
+    else cache miss
+        RES->>RES: per-tenant quota check
+        alt quota exhausted
+            RES-->>ENG: verdict "error" (no call made)
+        else quota available
+            RES->>Host: host.RunAction("_subprocess", "run",<br/>{task, tools: "none", max_iterations: "1"})
+            Host->>SubA: bounded, single-turn, tool-less run
+            SubA->>API: completion (tenant credentials)
+            API-->>SubA: response
+            SubA-->>Host: result
+            Host-->>RES: structured_content
+            Note over RES: constrained to enum:<br/>match | mismatch | unclear |<br/>too_large | error
+            RES->>RES: cache + consume quota<br/>(skip both on verdict "error")
+            RES-->>ENG: verdict
+        end
     end
 
-    ENG->>ENG: result is now an ordinary fact —<br/>rules decide, the model does not
+    ENG->>ENG: enrich writes unit.llm_result / unit.llm_explanation —<br/>pass 2 reads them as ordinary facts, rules decide
 ```
 
-The fact store **is** the cache. No separate layer, no invalidation logic: a new
-commit produces a new sha, the fact is absent, the model runs again.
+No host (standalone TCP mode) means no callback channel at all: `whoami` omits
+`llm_review` from `features`, and a fired review degrades straight to
+`result: "error"` without reaching `RES`.
 
-That gives the headline property: **same head sha + same base ruleset ⇒ same
-actions, byte for byte.** A per-PR conversation is retained for continuity, but
+The resolver **is** the cache — tln's own `stale_after` can't serve this role
+because the fact store rebuilds every `evaluate_pr`, resetting write-times each
+run. No separate cache layer, no invalidation logic: a new commit is a new head
+sha is a cache miss, and the sub-agent runs again.
+
+That gives the headline property: **same head sha ⇒ same verdict, one call,
+byte-identical actions.** A per-PR conversation is retained for continuity, but
 it never changes an answer already recorded.
 
 ---
@@ -269,7 +284,7 @@ flowchart LR
     RULES["rules.tln"] -->|"define blocks over<br/>pr.changed_files"| TOUCH["<b>pr.touches_*</b><br/>Tln-native path predicates"]
     PRF --> TOUCH
     REV["pull_request_review<br/>events"] --> REVF["<b>review.*</b>"]
-    ENGINE["llm_review"] --> LLMF["<b>llm_review.*</b><br/>pinned to head_sha"]
+    ENGINE["llm_review enrich"] --> LLMF["<b>unit.*</b><br/>llm_result/llm_explanation, pinned to head_sha"]
     YOURCI["Tenant CI<br/>assert_facts<br/><i>store-only, read next run</i>"] --> CUSTOM["<b>preview.* screenshots.*<br/>dependency_scan.*</b>"]
 
     PRF --> STORE[("tln-db<br/>per-PR fact scope")]

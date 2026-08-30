@@ -28,7 +28,7 @@ One scope per `(repo, pr)`. Contents:
 
 - Facts asserted by the bot each run (`pr.*`, `user.*`, `review.*`, …)
 - Facts pushed by tenant CI (`preview.*`, `screenshots.*`, …)
-- `llm_review.*` results, keyed by head sha
+- `unit.*` review results, keyed by head sha
 - Subscription state — a fact like everything else (`OPEN-QUESTIONS.md` B1), so
   `when attr "pr.subscribed" == true` is expressible and there's one storage story
 - Decision + `explain` records
@@ -61,7 +61,7 @@ this PR for a few days" silently drops facts that were never used.
 ## Namespace enforcement lives here
 
 `assert_facts` must reject writes to `pr.*`, `user.*`, `repo.*`, `review.*`,
-`event.*` and `llm_review.*`.
+`event.*` and `unit.*`.
 
 Without that check, a tenant's CI workflow can POST `pr.tests_passing: true` and
 defeat the entire ruleset.
@@ -125,19 +125,31 @@ unset while CI is still running, and unset when no check matches the tenant's
 patterns at all. Both are safe, because the rules that read it are gated on
 `== true`.
 
-## `llm_review.*`
+## `unit.*`
+
+One `code_unit`-type record per touched, documented file the bot proposes for
+review (`evaluate_pr`'s `code_units` JSON arg, decoded in
+`internal/service/units.go`) — not a PR-level fact, because one PR can carry
+several reviewed units:
 
 | Fact | Type |
 |---|---|
-| `llm_review.result` | enum: `match` \| `mismatch` \| `unclear` \| `too_large` \| `error` |
-| `llm_review.explanation` | string |
-| `llm_review.doc_url` | string |
-| `llm_review.error` | string, set only when `result == "error"` |
+| `unit.name` | string |
+| `unit.important` | bool — gates whether `enrich` reviews this unit at all (token economy) |
+| `unit.doc_url` | string |
+| `unit.doc_content` | string, read from the **base branch** by the bot, so a fork PR can't rewrite what it's judged against |
+| `unit.diff` | string, this unit's diff slice |
+| `unit.diff_truncated` | bool |
+| `unit.llm_result` | enum: `match` \| `mismatch` \| `unclear` \| `too_large` \| `error` — written by the `enrich` step, not the bot |
+| `unit.llm_explanation` | string, written by the `enrich` step; carries the reason on `error` too |
 
-Keyed by `(pr, head_sha, doc_url, prompt_version)`. Rules must handle `unclear`
-and `error`; a ruleset that only matches `match` and `mismatch` silently does
-nothing on failure, which is the safe direction but should produce a lint warning
-from `validate_ruleset`. See `llm-review.md`.
+The whole `unit.*` namespace is reserved from tenant `assert_facts`. The verdict
+is cached by `(scope, head_sha, unit, prompt_version)` in the resolver, not by
+tln's `stale_after` — the fact store rebuilds every `evaluate_pr`, so tln can't
+express "same as last run" here. Rules must handle `unclear` and `error`; a
+ruleset that only matches `match` and `mismatch` silently does nothing on
+failure, which is the safe direction but should produce a lint warning from
+`validate_ruleset`. See `llm-review.md`.
 
 ## List operands
 
