@@ -50,7 +50,11 @@ asks the host to do the call:
   `host.RunAction("_subprocess", "run", {task, tools: "none", max_iterations: "1"})`
   — a bounded, single-turn, **tool-less** sub-agent (`tools: "none"`, so an
   injected "run the deploy tool" from the diff can't fire). The host runs it
-  with the tenant's cluster credentials and returns the answer inline.
+  with the tenant's cluster credentials and returns the answer inline. Since
+  `opentalon` v0.0.27 (`#55`), `tools: "none"` is itself a host-enforced
+  single-iteration mode ([`opentalon#341`](https://github.com/opentalon/opentalon/issues/341))
+  — "exactly one host call per unit" no longer depends on talooner also passing
+  `max_iterations: "1"` correctly.
 - Token spend is metered by the host (`opentalon_llm_*` per entity,
   `opentalon_plugin_*` per plugin/action), so a review is attributable to the
   calling repo/workflow without inspecting model output.
