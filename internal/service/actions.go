@@ -87,6 +87,15 @@ func registerActions(s *Server) {
 	}, s.runRulesetTest)
 
 	s.register(plugin.ActionMsg{
+		Name:        "generate_ruleset",
+		Description: "Scaffold a rules.tln + rules.tln.test pair for a repo via the model, self-verified to compile and pass before it's returned. Falls back to an empty pair (source=fallback) when the model path is unavailable. Powers `talooner onboard`.",
+		UserOnly:    true,
+		Parameters: []plugin.ParameterMsg{
+			{Name: "repo_summary", Description: "Text summary of the target repo: languages, layout, existing CI, README excerpt", Type: "string", Required: true},
+		},
+	}, func(req plugin.Request) plugin.Response { return s.generateRuleset(context.Background(), req, nil) })
+
+	s.register(plugin.ActionMsg{
 		Name:        "explain_pr",
 		Description: "Return the recorded explanation for a PR's last decision. Powers `@talooner /why`.",
 		UserOnly:    true,

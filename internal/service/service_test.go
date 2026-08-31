@@ -34,6 +34,7 @@ func TestReadOnlyMatrix(t *testing.T) {
 		"assert_facts":     false,
 		"validate_ruleset": true,
 		"run_ruleset_test": true,
+		"generate_ruleset": false,
 		"explain_pr":       true,
 		"whoami":           true,
 	}
@@ -52,7 +53,7 @@ func TestReadOnlyMatrix(t *testing.T) {
 // TestActionSet locks the declared action surface (protocol.md).
 func TestActionSet(t *testing.T) {
 	want := []string{
-		"assert_facts", "evaluate_pr", "explain_pr", "is_subscribed",
+		"assert_facts", "evaluate_pr", "explain_pr", "generate_ruleset", "is_subscribed",
 		"run_ruleset_test", "set_subscription", "validate_ruleset", "whoami",
 	}
 	var got []string

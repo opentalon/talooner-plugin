@@ -269,3 +269,25 @@ message RejectedFact {
 message ExplainPrResponse {
   Explain explain = 1;
 }
+
+// GenerateRulesetRequest is the generate_ruleset payload. repo_summary is a
+// caller-built text blob describing the target repo (languages, directory
+// layout, existing CI, README excerpt) — the only context the model gets,
+// since the plugin never touches the repo itself.
+message GenerateRulesetRequest {
+  string repo_summary = 1;
+}
+
+// GenerateRulesetResponse answers generate_ruleset. On the LLM path, ruleset
+// and ruleset_test are a self-verified, compiling, passing pair (the plugin
+// compiles and runs them before returning). On the fallback path — no host,
+// the feature withdrawn, quota exhausted, or the model's output failed
+// self-verification — both fields are empty and note explains why; the
+// plugin does not embed a starter ruleset of its own, the caller supplies
+// one.
+message GenerateRulesetResponse {
+  string ruleset = 1;
+  string ruleset_test = 2;
+  string source = 3; // "llm" | "fallback"
+  string note = 4;   // empty when source == "llm"
+}

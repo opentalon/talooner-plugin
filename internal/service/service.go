@@ -191,8 +191,9 @@ func (s *Server) ExecuteWithCallbacks(ctx context.Context, req plugin.Request, h
 // API key (fail closed), is rate-limited per key, and logs the caller — so a
 // tenant can answer "which repo burned my quota" without a model in the loop. An
 // unconfigured Server (tests/dev) skips the gate; whoami keeps its own
-// fail-closed auth regardless. Only evaluate_pr receives the HostCaller; every
-// other action is a pure function of its request.
+// fail-closed auth regardless. Only evaluate_pr and generate_ruleset receive
+// the HostCaller (both may call the model); every other action is a pure
+// function of its request.
 func (s *Server) dispatch(ctx context.Context, req plugin.Request, host plugin.HostCaller) plugin.Response {
 	a, ok := s.actions[req.Action]
 	if !ok {
@@ -211,8 +212,11 @@ func (s *Server) dispatch(ctx context.Context, req plugin.Request, host plugin.H
 		s.logCaller(req, tenant)
 	}
 
-	if req.Action == "evaluate_pr" {
+	switch req.Action {
+	case "evaluate_pr":
 		return s.evaluatePR(ctx, req, host)
+	case "generate_ruleset":
+		return s.generateRuleset(ctx, req, host)
 	}
 	return a.handler(req)
 }
