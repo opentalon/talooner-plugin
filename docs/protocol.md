@@ -54,6 +54,7 @@ and when a person invokes the action directly.
 | `assert_facts` | `repo`, `pr`, `facts` (JSON) | `{accepted: [...], rejected: [...]}` — the custom-facts path, **store-only in v1** |
 | `validate_ruleset` | `ruleset` (text) | `{valid: bool, diagnostics: [...]}` — powers `talooner rules validate` |
 | `run_ruleset_test` | `ruleset` (text), `test_source` (text) | `{results: [{name, passed, errors}], diagnostics: [...]}` — powers `talooner rules test` |
+| `generate_ruleset` | `repo_summary` (text) | `{ruleset, ruleset_test, source: "llm" \| "fallback", note}` — powers `talooner onboard`. The plugin self-verifies an LLM-produced pair (compiles, passes its own tests) before returning it; `source: "fallback"` on an empty `ruleset`/`ruleset_test` means the caller must supply its own starter |
 | `explain_pr` | `repo`, `pr`, `head_sha` | `{explain: {...}}` — powers `@talooner /why` |
 | `whoami` | — | `{tenant, quota, models, features, protocol_version}` |
 
@@ -118,7 +119,9 @@ design premise is that rules decide and the model answers questions; `user_only`
 is what enforces that at the protocol level rather than by convention.
 
 `read_only: true` on `is_subscribed`, `validate_ruleset`, `run_ruleset_test`,
-`explain_pr`, `whoami`. The rest mutate.
+`explain_pr`, `whoami`. The rest mutate — `generate_ruleset` is not read_only
+even though it writes nothing server-side, since like `evaluate_pr` it may
+spend LLM budget.
 
 ## Payload size
 

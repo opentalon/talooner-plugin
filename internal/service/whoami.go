@@ -15,10 +15,21 @@ import (
 // (auth.Tenant.HasFeature).
 const featureLLMReview = "llm_review"
 
+// featureGenerateRuleset is the whoami feature name a caller checks before
+// relying on generate_ruleset's LLM path rather than its own fallback.
+const featureGenerateRuleset = "generate_ruleset"
+
+// standaloneWithdrawnFeatures are the whoami features withdrawn in standalone
+// mode (TCP, no host): both need the host callback channel to reach a model.
+var standaloneWithdrawnFeatures = map[string]bool{
+	featureLLMReview:       true,
+	featureGenerateRuleset: true,
+}
+
 // availableFeatures is the tenant's configured features minus any the running
-// deployment can't honour. In standalone mode (TCP, no host) there is no
-// callback channel to perform the model call, so llm_review is withdrawn — the
-// caller warns at ruleset-load time instead of failing on the first PR
+// deployment can't honour. In standalone mode there is no callback channel to
+// perform a model call, so the model-dependent features are withdrawn — the
+// caller warns/falls back at load time instead of failing on first use
 // (llm-review.md).
 func (s *Server) availableFeatures(tenant auth.Tenant) []string {
 	if !s.standalone {
@@ -26,7 +37,7 @@ func (s *Server) availableFeatures(tenant auth.Tenant) []string {
 	}
 	out := make([]string, 0, len(tenant.Features))
 	for _, f := range tenant.Features {
-		if f == featureLLMReview {
+		if standaloneWithdrawnFeatures[f] {
 			continue
 		}
 		out = append(out, f)
