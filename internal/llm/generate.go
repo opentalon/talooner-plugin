@@ -80,7 +80,14 @@ func Generate(ctx context.Context, host HostCaller, in GenerateInput) (ruleset, 
 	if strings.TrimSpace(payload.Ruleset) == "" || strings.TrimSpace(payload.RulesetTest) == "" {
 		return "", "", false, "the model returned an empty ruleset or test source"
 	}
-	return payload.Ruleset, payload.RulesetTest, true, ""
+	return ensureTrailingNewline(payload.Ruleset), ensureTrailingNewline(payload.RulesetTest), true, ""
+}
+
+// ensureTrailingNewline gives model output a POSIX-clean single trailing
+// newline — models are inconsistent about ending JSON-embedded source with
+// one, and a missing one is flagged by every linter/diff tool downstream.
+func ensureTrailingNewline(s string) string {
+	return strings.TrimRight(s, "\n") + "\n"
 }
 
 func renderGeneratePrompt(in GenerateInput) string {

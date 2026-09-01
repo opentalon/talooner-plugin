@@ -105,11 +105,11 @@ func TestGenerateRulesetSuccessReturnsVerifiedPair(t *testing.T) {
 	if got.GetSource() != "llm" {
 		t.Errorf("source = %q, want llm", got.GetSource())
 	}
-	if got.GetRuleset() != validGeneratedRuleset {
-		t.Errorf("ruleset mismatch")
+	if got.GetRuleset() != validGeneratedRuleset+"\n" {
+		t.Errorf("ruleset mismatch, want a single trailing newline appended")
 	}
-	if got.GetRulesetTest() != validGeneratedTest {
-		t.Errorf("ruleset_test mismatch")
+	if got.GetRulesetTest() != validGeneratedTest+"\n" {
+		t.Errorf("ruleset_test mismatch, want a single trailing newline appended")
 	}
 	if host.calls != 1 {
 		t.Errorf("want exactly one model call, got %d", host.calls)
@@ -165,7 +165,7 @@ func TestGenerateRulesetRecoversOnRetryAfterInvalidRuleset(t *testing.T) {
 	if got.GetSource() != "llm" {
 		t.Errorf("source = %q, want llm — the retry produced a valid pair", got.GetSource())
 	}
-	if got.GetRuleset() != validGeneratedRuleset {
+	if got.GetRuleset() != validGeneratedRuleset+"\n" {
 		t.Error("ruleset mismatch: want the corrected retry's ruleset")
 	}
 	if host.calls != 2 {
