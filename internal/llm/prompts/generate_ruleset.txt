@@ -40,6 +40,15 @@ rule "Auto-approve safe changes" {
   priority MEDIUM
 }
 
+rule "Flag critical-path changes for senior review" {
+  for records where type == "pr"
+    and attr "pr.draft" == false
+    and is "critical_path"
+  do require "review.senior"
+  do comment "pr" "This PR touches auth-handling code. Requesting a senior review, not blocking merge on it."
+  priority MEDIUM
+}
+
 --- and its paired test source (rules.tln.test) ---
 
 test "Small, tested, non-critical PR is approved" {
@@ -77,6 +86,22 @@ test "PR with no description is blocked" {
   }
 }
 
+test "Critical-path PR gets a review request, not a block" {
+  given {
+    record 1 type "pr"
+    attr 1 "pr.number" 103
+    attr 1 "pr.draft" false
+    attr 1 "pr.changed_files" ["internal/auth/token.go"]
+  }
+
+  when rule "Flag critical-path changes for senior review"
+
+  expect {
+    flagged 1
+    did 1 require "review.senior"
+  }
+}
+
 --- Rules for what you may write ---
 
 - Do not declare a rule named "strict" or add the `strict` modifier before
@@ -90,6 +115,19 @@ test "PR with no description is blocked" {
 - Base the specific predicates (paths treated as critical, size thresholds,
   which manifests imply which checks) on the repo summary below — a Rails
   API and a Go CLI should not get the same ruleset.
+- `critical_path` must name specific sensitive subpaths you can point to in
+  the repo summary (auth, payments, migrations, deploy config, the
+  language/DSL core — whatever that repo actually has), never a bare
+  top-level directory like "internal/" or "src/". A predicate that matches
+  most of the codebase is not a critical-path check, it is a blanket veto.
+  If the summary gives you nothing specific to key off, drop critical_path
+  entirely rather than guessing.
+- Reserve `do block "pr.merge"` for objective, binary failures the PR
+  itself reports (no description, failing tests, an explicit policy
+  violation) — not for path-based heuristics about what a human should
+  look at. For "this touches something sensitive, have a person look",
+  use `do require "review.senior"` (as in "Flag critical-path changes for
+  senior review" above): it asks for review without vetoing the merge.
 - Keep the ruleset short: prefer 3-6 rules that fit the repo's actual shape
   over reproducing every rule in the worked example above.
 
