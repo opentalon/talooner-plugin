@@ -13,17 +13,27 @@ import (
 	"github.com/opentalon/talooner-plugin/proto/taloonerpb"
 )
 
+// maxGenerateAttempts bounds how many times generateRuleset will show the
+// model its own compiler/test failure and ask it to fix it. Each attempt is
+// a real subprocess LLM call (quota + ~10-20s wall clock), so this trades a
+// slower onboard for a working ruleset landing in the PR instead of a
+// generic starter — 3 gives the model two chances to self-correct before
+// giving up.
+const maxGenerateAttempts = 3
+
 // generateRuleset scaffolds a rules.tln + rules.tln.test pair for a repo,
 // powering `talooner onboard`. It mirrors llm_review's host call
 // (internal/llm/generate.go, internal/service/resolver.go) rather than a new
 // pattern: same host.RunAction path, same per-tenant quota. It then
 // self-verifies the model's output through the same compile/test path
-// validate_ruleset and run_ruleset_test use, and falls back — empty
-// ruleset/ruleset_test, source="fallback", note explaining why — on any
-// failure: no host (standalone), quota exhausted, an unparseable model
-// reply, or a generated pair that doesn't compile or doesn't pass its own
-// tests. The plugin never embeds a starter ruleset of its own; the caller
-// (talooner onboard) supplies its own known-good starter on fallback.
+// validate_ruleset and run_ruleset_test use; on a compile or test failure it
+// feeds the diagnostic back to the model and retries, up to
+// maxGenerateAttempts, before falling back — empty ruleset/ruleset_test,
+// source="fallback", note explaining why. A no-host, quota-exhausted, or
+// unparseable-reply failure falls back immediately without retrying, since
+// none of those are something a fix-up prompt can address. The plugin never
+// embeds a starter ruleset of its own; the caller (talooner onboard)
+// supplies its own known-good starter on fallback.
 func (s *Server) generateRuleset(ctx context.Context, req plugin.Request, host plugin.HostCaller) plugin.Response {
 	summary := req.Args["repo_summary"]
 	if strings.TrimSpace(summary) == "" {
@@ -35,38 +45,57 @@ func (s *Server) generateRuleset(ctx context.Context, req plugin.Request, host p
 	if host == nil {
 		return generateFallback(req, "generate_ruleset is unavailable: this plugin is running without an OpenTalon host to perform the call")
 	}
-	if !s.llmQuotaAvailable(tenant) {
-		return generateFallback(req, "generate_ruleset is unavailable: the tenant's LLM call budget is exhausted")
-	}
 
-	src, testSrc, ok, explanation := llm.Generate(ctx, host, llm.GenerateInput{RepoSummary: summary})
-	if !ok {
-		// Transient (host error or unparseable reply): do not consume quota, so
-		// a retry isn't penalized for a call that produced nothing usable —
-		// same convention as reviewResolver's VerdictError branch.
-		return generateFallback(req, explanation)
-	}
-	s.llmQuotaConsume(tenant)
-
-	if valid, diags := ruleset.Validate(src); !valid {
-		return generateFallback(req, "generated ruleset did not compile: "+firstDiagnosticMessage(diags))
-	}
-	results, diags, err := ruleset.RunTests(src, testSrc)
-	if err != nil {
-		return generateFallback(req, "generated test source did not compile: "+firstDiagnosticMessage(diags))
-	}
-	for _, r := range results {
-		if !r.Passed {
-			return generateFallback(req, fmt.Sprintf("generated ruleset failed its own test %q", r.Name))
+	var prior *llm.PriorAttempt
+	var lastNote string
+	for attempt := 1; attempt <= maxGenerateAttempts; attempt++ {
+		if !s.llmQuotaAvailable(tenant) {
+			return generateFallback(req, "generate_ruleset is unavailable: the tenant's LLM call budget is exhausted")
 		}
+
+		src, testSrc, ok, explanation := llm.Generate(ctx, host, llm.GenerateInput{RepoSummary: summary, Prior: prior})
+		if !ok {
+			// Transient (host error or unparseable reply): do not consume quota,
+			// and don't retry — a broken call/parse isn't something a fix-up
+			// prompt can address, same convention as reviewResolver's
+			// VerdictError branch.
+			return generateFallback(req, explanation)
+		}
+		s.llmQuotaConsume(tenant)
+
+		if valid, diags := ruleset.Validate(src); !valid {
+			lastNote = "generated ruleset did not compile: " + firstDiagnosticMessage(diags)
+			prior = &llm.PriorAttempt{Ruleset: src, RulesetTest: testSrc, Error: lastNote}
+			continue
+		}
+		results, diags, err := ruleset.RunTests(src, testSrc)
+		if err != nil {
+			lastNote = "generated test source did not compile: " + firstDiagnosticMessage(diags)
+			prior = &llm.PriorAttempt{Ruleset: src, RulesetTest: testSrc, Error: lastNote}
+			continue
+		}
+		failed := false
+		for _, r := range results {
+			if !r.Passed {
+				lastNote = fmt.Sprintf("generated ruleset failed its own test %q", r.Name)
+				failed = true
+				break
+			}
+		}
+		if failed {
+			prior = &llm.PriorAttempt{Ruleset: src, RulesetTest: testSrc, Error: lastNote}
+			continue
+		}
+
+		resp := &taloonerpb.GenerateRulesetResponse{
+			Ruleset:     src,
+			RulesetTest: testSrc,
+			Source:      "llm",
+		}
+		return structuredResponse(req, resp, fmt.Sprintf("generated and verified a %d-test ruleset", len(results)))
 	}
 
-	resp := &taloonerpb.GenerateRulesetResponse{
-		Ruleset:     src,
-		RulesetTest: testSrc,
-		Source:      "llm",
-	}
-	return structuredResponse(req, resp, fmt.Sprintf("generated and verified a %d-test ruleset", len(results)))
+	return generateFallback(req, fmt.Sprintf("model output still failed verification after %d attempts: %s", maxGenerateAttempts, lastNote))
 }
 
 func generateFallback(req plugin.Request, note string) plugin.Response {

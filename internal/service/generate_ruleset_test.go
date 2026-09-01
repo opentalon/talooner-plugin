@@ -69,16 +69,32 @@ func TestGenerateRulesetMissingSummaryErrors(t *testing.T) {
 
 // The success path uses a fakeHost that returns the generate_ruleset JSON
 // shape rather than llm_review's verdict shape — reusing fakeHost's plumbing
-// (call counting) but its own reply.
+// (call counting) but its own reply. replies, if set, scripts one JSON reply
+// per call in order (clamped to the last entry past the end) so a test can
+// exercise the retry loop; otherwise every call returns the fixed
+// ruleset/testSource fields.
 type fakeGenerateHost struct {
 	ruleset, testSource string
+	replies             []generateReply
 	calls               int
+}
+
+type generateReply struct {
+	ruleset, testSource string
 }
 
 func (f *fakeGenerateHost) RunAction(_ context.Context, _, _ string, _ map[string]string) (plugin.CallResult, error) {
 	f.calls++
+	rs, ts := f.ruleset, f.testSource
+	if len(f.replies) > 0 {
+		idx := f.calls - 1
+		if idx >= len(f.replies) {
+			idx = len(f.replies) - 1
+		}
+		rs, ts = f.replies[idx].ruleset, f.replies[idx].testSource
+	}
 	return plugin.CallResult{
-		StructuredContent: fmt.Sprintf(`{"ruleset":%q,"ruleset_test":%q}`, f.ruleset, f.testSource),
+		StructuredContent: fmt.Sprintf(`{"ruleset":%q,"ruleset_test":%q}`, rs, ts),
 	}, nil
 }
 
@@ -100,8 +116,9 @@ func TestGenerateRulesetSuccessReturnsVerifiedPair(t *testing.T) {
 	}
 }
 
-// A model reply that doesn't compile must fall back rather than handing the
-// caller a known-broken pair.
+// A model reply that doesn't compile must retry with the compiler's
+// complaint fed back, and only fall back once every attempt still fails —
+// never handing the caller a known-broken pair.
 func TestGenerateRulesetFallsBackOnInvalidRuleset(t *testing.T) {
 	host := &fakeGenerateHost{ruleset: `rule "broken" { do }`, testSource: validGeneratedTest}
 	got := decodeGenerate(t, generateHosted(New(), host, baseGenerateArgs()))
@@ -115,9 +132,13 @@ func TestGenerateRulesetFallsBackOnInvalidRuleset(t *testing.T) {
 	if got.GetNote() == "" {
 		t.Error("expected a note explaining the fallback")
 	}
+	if host.calls != maxGenerateAttempts {
+		t.Errorf("want %d model calls (retrying a persistently broken reply) before giving up, got %d", maxGenerateAttempts, host.calls)
+	}
 }
 
-// A model reply that compiles but fails its own test must also fall back.
+// A model reply that compiles but fails its own test must also retry, then
+// fall back if it never recovers.
 func TestGenerateRulesetFallsBackOnFailingTest(t *testing.T) {
 	failingTest := strings.Replace(validGeneratedTest, `did 1 block "pr.merge"`, `did_not 1 block "pr.merge"`, 1)
 	host := &fakeGenerateHost{ruleset: validGeneratedRuleset, testSource: failingTest}
@@ -125,6 +146,30 @@ func TestGenerateRulesetFallsBackOnFailingTest(t *testing.T) {
 
 	if got.GetSource() != "fallback" {
 		t.Errorf("source = %q, want fallback", got.GetSource())
+	}
+	if host.calls != maxGenerateAttempts {
+		t.Errorf("want %d model calls before giving up, got %d", maxGenerateAttempts, host.calls)
+	}
+}
+
+// A model that compiles cleanly after being shown its first attempt's
+// compile error must succeed on the retry rather than exhausting every
+// attempt or falling back.
+func TestGenerateRulesetRecoversOnRetryAfterInvalidRuleset(t *testing.T) {
+	host := &fakeGenerateHost{replies: []generateReply{
+		{ruleset: `rule "broken" { do }`, testSource: validGeneratedTest},
+		{ruleset: validGeneratedRuleset, testSource: validGeneratedTest},
+	}}
+	got := decodeGenerate(t, generateHosted(New(), host, baseGenerateArgs()))
+
+	if got.GetSource() != "llm" {
+		t.Errorf("source = %q, want llm — the retry produced a valid pair", got.GetSource())
+	}
+	if got.GetRuleset() != validGeneratedRuleset {
+		t.Error("ruleset mismatch: want the corrected retry's ruleset")
+	}
+	if host.calls != 2 {
+		t.Errorf("want exactly 2 model calls (1 broken + 1 corrected), got %d", host.calls)
 	}
 }
 

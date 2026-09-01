@@ -15,10 +15,31 @@ import (
 //go:embed prompts/generate_ruleset.txt
 var generatePromptTemplate string
 
+// generateRetryPromptTemplate is generatePromptTemplate's counterpart for a
+// fix-up attempt: same syntax reference and output contract, plus the prior
+// attempt's source and the compiler's complaint about it. A retry is still a
+// single one-shot subprocess call with no memory of the first one, so it has
+// to be self-contained rather than a delta on top of the first prompt.
+//
+//go:embed prompts/generate_ruleset_retry.txt
+var generateRetryPromptTemplate string
+
 // GenerateInput is what the model sees to scaffold a ruleset: a caller-built
 // text summary of the target repo. The plugin never touches the repo itself.
+// Prior is nil on the first attempt; a caller retrying after a compile/test
+// failure sets it so the model can see and fix its own mistake.
 type GenerateInput struct {
 	RepoSummary string
+	Prior       *PriorAttempt
+}
+
+// PriorAttempt is a previous generation that failed verification, threaded
+// into a retry prompt so the model fixes the specific problem instead of
+// guessing again from scratch.
+type PriorAttempt struct {
+	Ruleset     string
+	RulesetTest string
+	Error       string
 }
 
 // generatePayload is the JSON shape the prompt asks the sub-agent to return.
@@ -63,8 +84,17 @@ func Generate(ctx context.Context, host HostCaller, in GenerateInput) (ruleset, 
 }
 
 func renderGeneratePrompt(in GenerateInput) string {
-	r := strings.NewReplacer("{{REPO_SUMMARY}}", in.RepoSummary)
-	return r.Replace(generatePromptTemplate)
+	if in.Prior == nil {
+		r := strings.NewReplacer("{{REPO_SUMMARY}}", in.RepoSummary)
+		return r.Replace(generatePromptTemplate)
+	}
+	r := strings.NewReplacer(
+		"{{REPO_SUMMARY}}", in.RepoSummary,
+		"{{PRIOR_RULESET}}", in.Prior.Ruleset,
+		"{{PRIOR_RULESET_TEST}}", in.Prior.RulesetTest,
+		"{{COMPILE_ERROR}}", in.Prior.Error,
+	)
+	return r.Replace(generateRetryPromptTemplate)
 }
 
 // decodeGeneratePayload tolerates a model that wraps its JSON in prose or a
