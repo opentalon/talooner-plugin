@@ -149,7 +149,44 @@ tln's `stale_after` — the fact store rebuilds every `evaluate_pr`, so tln can'
 express "same as last run" here. Rules must handle `unclear` and `error`; a
 ruleset that only matches `match` and `mismatch` silently does nothing on
 failure, which is the safe direction but should produce a lint warning from
-`validate_ruleset`. See `llm-review.md`.
+`validate_ruleset` — tracked in
+[`talooner-plugin#69`](https://github.com/opentalon/talooner-plugin/issues/69),
+not yet implemented. See `llm-review.md`.
+
+### Example
+
+The `enrich` step and the reaction to a `mismatch` both ship in the base
+ruleset (`internal/ruleset/base/talooner.tln`) — every tenant gets this for
+free once they send `code_units`, and `"Never approve on a documented
+mismatch"` is `strict`, same as the other base rules:
+
+```tln
+enrich "Review important code units" {
+  for records where type == "code_unit" and attr "unit.important" == true
+  stale_after 1 hour
+  tool "llm" "review" {
+    unit attr "unit.name"
+    doc  attr "unit.doc_content"
+    diff attr "unit.diff"
+  }
+  update attr "unit.llm_result"      from result.verdict
+  update attr "unit.llm_explanation" from result.explanation
+}
+
+strict rule "Never approve on a documented mismatch" {
+  for records where type == "code_unit"
+    and attr "unit.llm_result" == "mismatch"
+  block "merge"
+  do block "pr.merge"
+  do comment "pr" "{attr.unit.name}: {attr.unit.llm_explanation}"
+  reason "code contradicts its own documentation"
+  priority CRITICAL
+}
+```
+
+A tenant ruleset only needs its own rules for `unclear` / `error` (a comment,
+an escalation, whatever fits) — the `mismatch` floor is non-overridable
+already.
 
 ## List operands
 

@@ -54,6 +54,39 @@ returned actions.
 | `docs/roadmap.md` | Plugin-scoped phases, and the phase-0 substrate this depends on |
 | `docs/OPEN-QUESTIONS.md` | Phase-0 findings and the calls made on them |
 
+## Example: `llm_review`
+
+The pattern a tenant ruleset (or, for the non-overridable floor, this repo's
+own base ruleset) writes to use `llm_review` — one `enrich` step that fires
+the model per documented code unit, and a rule that reacts to the verdict:
+
+```tln
+enrich "Review important code units" {
+  for records where type == "code_unit" and attr "unit.important" == true
+  stale_after 1 hour
+  tool "llm" "review" {
+    unit attr "unit.name"
+    doc  attr "unit.doc_content"
+    diff attr "unit.diff"
+  }
+  update attr "unit.llm_result"      from result.verdict
+  update attr "unit.llm_explanation" from result.explanation
+}
+
+rule "Block on a documented mismatch" {
+  for records where type == "code_unit"
+    and attr "unit.llm_result" == "mismatch"
+  do block "pr.merge"
+  do comment "pr" "{attr.unit.name}: {attr.unit.llm_explanation}"
+}
+```
+
+This exact pair — as a `strict` rule, so a tenant cannot override it — ships in
+[`internal/ruleset/base/talooner.tln`](internal/ruleset/base/talooner.tln),
+tested in the sibling `.tln.test`. See `docs/facts.md`, "`unit.*`", for the
+full fact reference and `docs/llm-review.md` for why the call is shaped this
+way (fork-PR safety, token economy, the two-pass engine run).
+
 ## Decisions inherited from the ecosystem
 
 The full list lives in [`talooner/README.md`](https://github.com/opentalon/talooner).

@@ -58,3 +58,84 @@ test "A PR whose required checks are still running is blocked" {
     did_not 2 block "pr.merge"
   }
 }
+
+// ─── llm_review ────────────────────────────────────────────────────────────
+
+test "Important code unit is reviewed; unimportant one is skipped" {
+  given {
+    record 1 type "code_unit"
+    attr 1 "unit.name" "billing.Invoice"
+    attr 1 "unit.important" true
+    attr 1 "unit.doc_content" "Invoice.total must equal sum(line_items)"
+    attr 1 "unit.diff" "- total = sum(line_items)\n+ total = sum(line_items) * 1.1"
+
+    // Same shape, not important — the token-economy gate must skip it.
+    record 2 type "code_unit"
+    attr 2 "unit.name" "util.Formatter"
+    attr 2 "unit.important" false
+    attr 2 "unit.doc_content" "Formatter.pad left-pads with zeroes"
+    attr 2 "unit.diff" "- pad(n, 4)\n+ pad(n, 5)"
+  }
+
+  mock tool "llm" "review" { returns { verdict "mismatch" explanation "adds an undocumented 10% surcharge" } }
+
+  when enrich "Review important code units"
+
+  expect {
+    flagged 1
+    not flagged 2
+    tool_called "llm" "review" with { unit == "billing.Invoice" doc == "Invoice.total must equal sum(line_items)" }
+  }
+}
+
+test "A documented mismatch blocks the merge, non-overridably" {
+  given {
+    record 1 type "code_unit"
+    attr 1 "unit.name" "billing.Invoice"
+    attr 1 "unit.llm_result" "mismatch"
+    attr 1 "unit.llm_explanation" "adds an undocumented 10% surcharge"
+
+    // Same shape but matched — must not block.
+    record 2 type "code_unit"
+    attr 2 "unit.name" "util.Formatter"
+    attr 2 "unit.llm_result" "match"
+  }
+
+  when rule "Never approve on a documented mismatch"
+
+  expect {
+    flagged 1
+    not flagged 2
+    did 1 block "pr.merge"
+    did 1 comment "pr" contains "adds an undocumented 10% surcharge"
+    did_not 2 block "pr.merge"
+  }
+}
+
+// llm-review.md: unclear/error must not silently pass. This rule only
+// covers the "never silently approve" half — the "must not stay silent"
+// half is talooner-plugin#69 (validate_ruleset lint warning), not enforced
+// by any base rule.
+test "Unclear and error verdicts do not block, and are not this rule's job" {
+  given {
+    record 1 type "code_unit"
+    attr 1 "unit.llm_result" "unclear"
+
+    record 2 type "code_unit"
+    attr 2 "unit.llm_result" "error"
+
+    record 3 type "code_unit"
+    attr 3 "unit.llm_result" "match"
+  }
+
+  when rule "Never approve on a documented mismatch"
+
+  expect {
+    not flagged 1
+    not flagged 2
+    not flagged 3
+    did_not 1 block "pr.merge"
+    did_not 2 block "pr.merge"
+    did_not 3 block "pr.merge"
+  }
+}
