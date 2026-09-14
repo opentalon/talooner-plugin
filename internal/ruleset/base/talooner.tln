@@ -27,3 +27,35 @@ strict rule "Never approve while required checks are still running" {
   reason "required checks still running"
   priority CRITICAL
 }
+
+// The review itself is not `strict` — `enrich` has no such keyword (only
+// `rule` does) — but it runs for every tenant regardless, because the base
+// file is always imported. A tenant with no code_unit docs configured simply
+// selects zero rows here, so this is a no-op until they opt in by documenting
+// units (facts.md, "unit.*").
+enrich "Review important code units" {
+  for records where type == "code_unit" and attr "unit.important" == true
+  stale_after 1 hour
+  tool "llm" "review" {
+    unit attr "unit.name"
+    doc  attr "unit.doc_content"
+    diff attr "unit.diff"
+  }
+  update attr "unit.llm_result"      from result.verdict
+  update attr "unit.llm_explanation" from result.explanation
+}
+
+// A tenant ruleset cannot override this: if a documented unit's own review
+// says the code contradicts it, that is a floor, not a suggestion a tenant
+// priority can outrank (llm-review.md, "Why the ruleset must handle unclear
+// and error" — silence on `unclear`/`error` is a tenant lint concern, but a
+// `mismatch` verdict blocking merge is not optional).
+strict rule "Never approve on a documented mismatch" {
+  for records where type == "code_unit"
+    and attr "unit.llm_result" == "mismatch"
+  block "merge"
+  do block "pr.merge"
+  do comment "pr" "{attr.unit.name}: {attr.unit.llm_explanation}"
+  reason "code contradicts its own documentation"
+  priority CRITICAL
+}
