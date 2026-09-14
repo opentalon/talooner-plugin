@@ -177,12 +177,15 @@ func RunTests(tenantSource, testSource string) ([]tln.TestResult, []Diagnostic, 
 }
 
 // Validate reports whether a tenant ruleset is valid and returns every
-// diagnostic — verb-vocabulary violations plus compile errors, each with a
-// source position. A ruleset is valid only if it compiles (with the strict base
-// imported) and every `do` verb is in AllowedVerbs. This backs the
+// diagnostic — verb-vocabulary violations, compile errors and the
+// unclear/error lint warning (CheckLLMResultCoverage), each with a source
+// position where one applies. A ruleset is valid only if it compiles (with
+// the strict base imported) and every `do` verb is in AllowedVerbs; the lint
+// warning is non-fatal and never flips valid to false. This backs the
 // validate_ruleset action and `talooner rules validate`.
 func Validate(tenantSource string) (valid bool, diags []Diagnostic) {
 	diags = append(diags, CheckVerbs(tenantSource)...)
+	diags = append(diags, CheckLLMResultCoverage(tenantSource)...)
 
 	// Load surfaces parse/compile/import errors (already relabelled to
 	// TenantFile). The compiled result is discarded — validation only cares
